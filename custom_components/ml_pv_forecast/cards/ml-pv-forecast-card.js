@@ -724,7 +724,16 @@ MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
   };
 };
 
-customElements.define("ml-pv-forecast-card", MlPvForecastCard);
+// Home Assistant swaps in a scoped custom element registry while it boots. This module is loaded
+// next to the frontend and can run before that; a card defined then is lost. Define it once
+// Home Assistant itself is defined, which happens after the swap.
+const defineCard = () => {
+  if (!customElements.get("ml-pv-forecast-card")) {
+    customElements.define("ml-pv-forecast-card", MlPvForecastCard);
+  }
+};
+if (customElements.get("home-assistant")) defineCard();
+else customElements.whenDefined("home-assistant").then(defineCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "ml-pv-forecast-card",

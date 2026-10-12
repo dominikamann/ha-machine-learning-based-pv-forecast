@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 – 2026-10-12
+
+- Fix: the card sometimes showed "Custom element doesn't exist: ml-pv-forecast-card". It loaded
+  before Home Assistant had set up its element registry and was lost; it now registers once Home
+  Assistant is ready.
+
 ## 0.4.1 – 2026-10-12
 
 - Card: days of the overview stacked vertically (readable on phones), a full-width tab bar with

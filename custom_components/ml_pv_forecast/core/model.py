@@ -22,6 +22,7 @@ MIN_FALLBACK_ROWS = 24
 MIN_UNSEEN_ROWS = 24
 HALF_LIFE_DAYS = 365
 REANALYSIS_WEIGHT = 0.3
+ACTIVE_TOLERANCE = 1.02
 
 
 class NotEnoughData(Exception):
@@ -145,9 +146,14 @@ def train(
 
     promoted = candidate_mae < baseline_mae
     if promoted and active_gbm is not None:
-        unseen = holdout & (t > active_gbm.trained_at)
-        if unseen.sum() >= MIN_UNSEEN_ROWS:
-            promoted = _mae(candidate, Xu[unseen], yu[unseen]) < _mae(
+        # Compare at the same data cutoff: a rival trained on exactly the data the active model
+        # had must not do worse on the hours neither has seen. This catches regressions (bad data,
+        # changed cleaning) without penalising the candidate for being trained on older data.
+        seen = t <= active_gbm.trained_at
+        unseen = ~seen
+        if unseen.sum() >= MIN_UNSEEN_ROWS and seen.sum() >= MIN_UNSEEN_ROWS:
+            rival = fit_gbm(Xu[seen], yu[seen], weights[seen], capacity, now)
+            promoted = _mae(rival, Xu[unseen], yu[unseen]) <= ACTIVE_TOLERANCE * _mae(
                 active_gbm, Xu[unseen], yu[unseen]
             )
 

@@ -78,3 +78,16 @@ def test_save_load_roundtrip_and_corrupt_file(tmp_path):
     path.write_bytes(b"garbage")
     assert load_model(path) is None
     assert load_model(tmp_path / "missing.joblib") is None
+
+
+def test_fresh_refit_replaces_older_model_after_a_change():
+    # New shading started 50 days ago. The active model (trained a week ago) already knows it;
+    # a weekly refit must not be rejected just because its holdout candidate predates the change.
+    times, X, y = data(200)
+    now = int(times[-1]) + 3600
+    hour = (times % 86400) / 3600
+    y = np.where((times >= now - 50 * 86400) & (hour >= 13), y * 0.4, y)
+    before = times < now - 7 * 86400
+    active = train(times[before], X[before], y[before], now - 7 * 86400).model
+    result = train(times, X, y, now, active=active)
+    assert result.promoted and result.model is not active

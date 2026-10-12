@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -35,6 +36,7 @@ SHORT_HORIZONS = {"30m": 1800, "1h": 3600, "6h": 21600}
 HISTORY_DAYS = 6 * 365
 WEATHER_MAX_AGE = timedelta(minutes=55)
 WEATHER_REPAIR_AFTER = timedelta(hours=3)
+ENTITY_REPAIR_AFTER = timedelta(minutes=30)
 EVALUATION_DAYS = 30
 CORRECTION_DAYS = 365
 RETENTION = timedelta(days=730)
@@ -61,6 +63,7 @@ class PlantRuntime:
     last_trained: int | None = None
     correction: Correction | None = None
     tau: float = DEFAULT_TAU
+    problem_since: datetime | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -129,6 +132,12 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             if plant.model is None:
                 self._background(self.async_train(plant.plant_id), f"train_{plant.plant_id}")
         self._background(self.async_evaluate(dt_util.utcnow()), "evaluate")
+        if not self.hass.is_running:
+            # Sensors of integrations that load after us exist once Home Assistant has started.
+            self._unsubscribe.append(async_at_started(self.hass, self._async_started))
+
+    async def _async_started(self, hass: HomeAssistant) -> None:
+        await self.async_request_refresh()
 
     def _background(self, coro, name: str) -> None:
         # Tracked by the entry, so HA cancels it on unload before the archive is closed.
@@ -180,7 +189,13 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     def _entity_problem(self, plant: PlantRuntime, err: EntityProblem) -> None:
-        plant.status, plant.error = "error", str(err)
+        # Source sensors may appear only after their integration started; report persistent ones.
+        now = dt_util.utcnow()
+        plant.problem_since = plant.problem_since or now
+        plant.error = str(err)
+        if now - plant.problem_since < ENTITY_REPAIR_AFTER:
+            return
+        plant.status = "error"
         self._issue(
             f"entity_{plant.plant_id}",
             "entity_problem",
@@ -232,7 +247,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             except EntityProblem as err:
                 self._entity_problem(plant, err)
                 continue
-            if plant.status == "error" and plant.error and "training" not in plant.error:
+            plant.problem_since = None
+            if plant.error and "training" not in plant.error:
                 plant.status = "ready" if plant.model.kind == "gbm" else "learning"
                 plant.error = None
             self._clear_issue(f"entity_{plant.plant_id}")

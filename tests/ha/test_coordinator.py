@@ -91,3 +91,28 @@ async def test_plant_added_during_setup_is_picked_up(recorder_mock, hass, open_m
     await hass.async_block_till_done(wait_background_tasks=True)
     names = {p.name for p in entry.runtime_data.plants.values()}
     assert names == {"Roof", "Balcony"}
+
+
+async def test_briefly_missing_sensor_raises_no_repair(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    issue_id = f"entity_{plant.plant_id}"
+    attributes = dict(hass.states.get("sensor.pv").attributes)
+    hass.states.async_remove("sensor.pv")  # e.g. its integration is still starting
+    await coordinator.async_refresh()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+    hass.states.async_set("sensor.pv", "0", attributes)
+    await coordinator.async_refresh()
+    assert plant.status in ("ready", "learning") and plant.plant_id in coordinator.data
+
+
+async def test_sensor_missing_for_long_raises_repair(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    hass.states.async_remove("sensor.pv")
+    await coordinator.async_refresh()
+    plant.problem_since -= timedelta(minutes=31)
+    await coordinator.async_refresh()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"entity_{plant.plant_id}") is not None

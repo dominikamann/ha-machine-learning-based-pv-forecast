@@ -185,8 +185,10 @@ Five views, switched with the tabs at the top of the card:
 | Overview, one chart per day | `layout: timeline`, all days in one chart |
 |---|---|
 | ![Overview](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/overview.png) | ![Timeline](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/timeline.png) |
-| **Days** – one day at a time, rotating | **On a phone** |
-| ![Days](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/days.png) | ![Phone](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/overview-mobile.png) |
+| **Days** – one day at a time, rotating | **Plants** – per plant, stacked, with totals |
+| ![Days](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/days.png) | ![Plants](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/plants.png) |
+| **On a phone** | |
+| ![Phone](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/overview-mobile.png) | |
 
 Want separate cards instead? Use one card per view with `view:` and `tabs: false`. The card is
 also in the card picker as **PV Forecast**. Actual production of the last 10 days is taken from

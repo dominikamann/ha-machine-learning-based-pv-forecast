@@ -111,6 +111,16 @@ const GEN = {
       .map(r => [new Date(r.time).getTime(), r.${key} / 1000]);`,
   morning: hourlyAverage("entity.attributes.morning", "p50"),
   actual: hourlyAverage("entity.attributes.actual", "w"),
+  // Sum of the hourly P50 of several plants (apexcharts-card passes `hass` to generators).
+  stacked: (ids) => `
+    const sums = {};
+    for (const id of ${JSON.stringify(ids)}) {
+      (hass.states[id]?.attributes.hourly || []).forEach(r => {
+        const t = new Date(r.time).getTime();
+        sums[t] = (sums[t] || 0) + r.p50 / 1000;
+      });
+    }
+    return Object.entries(sums).map(([t, v]) => [Number(t), v]).sort((a, b) => a[0] - b[0]);`,
   review: (index, key) => `
     const day = (entity.attributes.review || [])[${index}];
     if (!day) return [];
@@ -147,7 +157,7 @@ function dayWeather(hourly, dayStart) {
 }
 
 // Small grey weather symbols along the top of a chart, every `step` hours within [from, to).
-function weatherMarks(hourly, from, to, step) {
+function weatherMarks(hourly, from, to, step, offsetY = -2) {
   return (hourly || [])
     .filter((r) => {
       const t = new Date(r.time).getTime();
@@ -161,7 +171,7 @@ function weatherMarks(hourly, from, to, step) {
         orientation: "horizontal",
         position: "top",
         textAnchor: "middle",
-        offsetY: -2,
+        offsetY,
         borderWidth: 0,
         style: { background: "transparent", color: "#9E9E9E", fontSize: "13px" },
       },
@@ -816,7 +826,8 @@ MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
     ],
   });
   const daylight = (a.hourly || []).filter((r) => r.p50 > 0);
-  const weatherAnnotations = weatherMarks(daylight, localMidnight(), localMidnight(this._config.days), 3);
+  // one row below the day labels, so they never overlap
+  const weatherAnnotations = weatherMarks(daylight, localMidnight(), localMidnight(this._config.days), 3, 16);
   config.apex_config.annotations = { xaxis: [...marks, ...weatherAnnotations] };
   config.apex_config.xaxis = {
     labels: { datetimeUTC: false, format: "HH:mm" },
@@ -885,18 +896,29 @@ MlPvForecastCard.prototype._plantsSpec = function (t) {
     yAxis: true,
     now: true,
     height: 260,
-    series: plants.map((p, i) =>
-      this._series(p.entity_id, p.attributes.plant, PLANT_COLORS[i % PLANT_COLORS.length], GEN.hourly("p50"), {
-        type: "area",
-        opacity: 0.6,
-        stroke_width: 1,
-      })
-    ),
+    // Stacked by hand: series i shows the sum of plants 0..i. Drawn from the largest sum down, so
+    // each plant's band sits on top of the ones before it.
+    series: plants
+      .map((p, i) =>
+        this._series(p.entity_id, p.attributes.plant, PLANT_COLORS[i % PLANT_COLORS.length], GEN.stacked(plants.slice(0, i + 1).map((q) => q.entity_id)), {
+          type: "area",
+          opacity: 0.85,
+          stroke_width: 1,
+        })
+      )
+      .reverse(),
   });
-  config.stacked = true;
+  // The tooltip shows each plant's own power: its sum minus the sum below it (next series).
+  config.apex_config.tooltip = {
+    x: { format: "ddd HH:mm" },
+    y: {
+      formatter:
+        "EVAL:function(value, { seriesIndex, dataPointIndex, w }) { const below = w.globals.series[seriesIndex + 1]; const own = value - (below ? below[dataPointIndex] || 0 : 0); return own.toFixed(2) + ' kW'; }",
+    },
+  };
   const daylight = hourly(plants[0]).filter((r) => r.p50 > 0);
   config.apex_config.annotations = {
-    xaxis: [...marks, ...weatherMarks(daylight, localMidnight(), localMidnight(this._config.days), 3)],
+    xaxis: [...marks, ...weatherMarks(daylight, localMidnight(), localMidnight(this._config.days), 3, 16)],
   };
   config.apex_config.xaxis = {
     labels: { datetimeUTC: false, format: "HH:mm" },

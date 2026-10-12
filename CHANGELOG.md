@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1 – 2026-10-12
+
+- Card: the Plants view now really stacks the plants (each band sits on the plants before it;
+  the tooltip shows each plant's own power).
+- Card: weather symbols one row below the day labels in continuous charts, so they no longer
+  overlap.
+- README screenshots with weather symbols and the Plants view.
+
 ## 0.5.0 – 2026-10-12
 
 - Card: the weather in a subtle way – prevailing weather and highest temperature next to each day,

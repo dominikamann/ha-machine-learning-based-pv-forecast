@@ -4,65 +4,135 @@
       "user": {
         "title": "Machine-Learning-Based PV Forecast",
         "description": "Der Standort wird aus Home Assistant übernommen. Füge danach deine PV-Anlagen über \"Anlage hinzufügen\" hinzu.",
-        "data": { "evcc_enabled": "Prognose-Endpunkt für evcc bereitstellen" }
+        "data": {
+          "evcc_enabled": "Prognose-Endpunkt für evcc bereitstellen"
+        }
       }
     },
-    "abort": { "already_configured": "Bereits eingerichtet." }
+    "abort": {
+      "already_configured": "Bereits eingerichtet."
+    }
   },
   "options": {
-    "step": { "init": { "data": { "evcc_enabled": "Prognose-Endpunkt für evcc bereitstellen" } } }
+    "step": {
+      "init": {
+        "data": {
+          "evcc_enabled": "Prognose-Endpunkt für evcc bereitstellen"
+        }
+      }
+    }
   },
   "config_subentries": {
     "plant": {
       "entry_type": "PV-Anlage",
-      "initiate_flow": { "user": "Anlage hinzufügen" },
+      "initiate_flow": {
+        "user": "Anlage hinzufügen"
+      },
       "step": {
         "user": {
           "title": "PV-Anlage hinzufügen",
-          "data": { "name": "Name", "entities": "Erzeugungssensoren", "limit_w": "Einspeise- oder Wechselrichterlimit" },
+          "description": "Eine Anlage ist alles, was ein Erzeugungssensor (oder eine Gruppe von Sensoren) misst, z. B. ein Wechselrichter mit allen Modulen oder ein Balkonkraftwerk. Module in verschiedenen Himmelsrichtungen an einem Wechselrichter sind kein Problem – das Modell lernt die Mischung.",
+          "data": {
+            "name": "Name",
+            "measurement": "Wie wird die Erzeugung gemessen?"
+          },
           "data_description": {
-            "entities": "Leistungs- (W, kW) oder Energiesensoren (Wh, kWh). Ihre Summe ist die Erzeugung dieser Anlage.",
-            "limit_w": "Optional. Leer lassen, dann wird Abregelung automatisch erkannt."
+            "measurement": "Leistung: ein Sensor in W oder kW. Energie: ein Zählerstand in Wh oder kWh, der immer weiter hochzählt."
           }
         },
         "reconfigure": {
           "title": "PV-Anlage ändern",
-          "data": { "name": "Name", "entities": "Erzeugungssensoren", "limit_w": "Einspeise- oder Wechselrichterlimit" },
+          "description": "Eine Anlage ist alles, was ein Erzeugungssensor (oder eine Gruppe von Sensoren) misst, z. B. ein Wechselrichter mit allen Modulen oder ein Balkonkraftwerk. Module in verschiedenen Himmelsrichtungen an einem Wechselrichter sind kein Problem – das Modell lernt die Mischung.",
+          "data": {
+            "name": "Name",
+            "measurement": "Wie wird die Erzeugung gemessen?"
+          },
           "data_description": {
-            "entities": "Leistungs- (W, kW) oder Energiesensoren (Wh, kWh). Ihre Summe ist die Erzeugung dieser Anlage.",
-            "limit_w": "Optional. Leer lassen, dann wird Abregelung automatisch erkannt."
+            "measurement": "Leistung: ein Sensor in W oder kW. Energie: ein Zählerstand in Wh oder kWh, der immer weiter hochzählt."
           }
+        },
+        "sensors": {
+          "title": "Erzeugungssensoren",
+          "description": "Wähle die Sensoren, die messen, was die **Module** erzeugen. Mehrere Sensoren werden addiert.\n\n- Wechselrichter mit Batterie (Hybrid): nicht die AC-Leistung des Wechselrichters nehmen, sie enthält die Batterieentladung. Nimm die DC-Erzeugung der Module oder einen daraus integrierten Energiezähler.\n- Steckdose, deren Zähler sich nach einem Neustart zurücksetzt: lieber den Leistungssensor nehmen.",
+          "data": {
+            "entities": "Sensoren",
+            "limit_w": "Einspeise- oder Wechselrichterlimit (optional)"
+          },
+          "data_description": {
+            "limit_w": "Wenn die Erzeugung begrenzt ist (z. B. 600-W-Balkonkraftwerk oder Einspeiselimit). Leer lassen, dann wird es automatisch erkannt."
+          }
+        },
+        "confirm_negative": {
+          "title": "Ist das der richtige Sensor?",
+          "description": "{entity_id} lag in den letzten 30 Tagen bei bis zu {lowest} W. Module erzeugen nie negative Leistung – das ist typisch für den AC-Ausgang eines Wechselrichters, dessen Batterie aus dem Netz lädt. Die Prognose lernt aus diesem Sensor und könnte daher falsch werden.\n\nTrotzdem fortfahren oder zurückgehen und den Erzeugungssensor der Module wählen."
         }
       },
       "error": {
         "no_entities": "Mindestens einen Sensor auswählen.",
         "missing": "Sensor nicht gefunden.",
         "unsupported_unit": "Der Sensor muss Leistung (W, kW) oder Energie (Wh, kWh) messen.",
-        "no_statistics": "Der Sensor hat keine Langzeitstatistik (state_class fehlt)."
+        "no_statistics": "Der Sensor hat keine Langzeitstatistik (state_class fehlt).",
+        "wrong_kind": "Der Sensor passt nicht zur gewählten Messart (Leistung oder Energie)."
       },
-      "abort": { "reconfigure_successful": "Anlage aktualisiert." }
+      "abort": {
+        "reconfigure_successful": "Anlage aktualisiert."
+      }
     }
   },
   "entity": {
     "sensor": {
-      "next_30m": { "name": "Nächste 30 Minuten" },
-      "next_1h": { "name": "Nächste Stunde" },
-      "next_6h": { "name": "Nächste 6 Stunden" },
-      "today": { "name": "Heute" },
-      "today_remaining": { "name": "Heute verbleibend" },
-      "tomorrow": { "name": "Morgen" },
-      "day_after_tomorrow": { "name": "Übermorgen" },
-      "peak_today": { "name": "Spitzenleistung heute" },
-      "peak_tomorrow": { "name": "Spitzenleistung morgen" },
-      "curve": { "name": "Prognoseverlauf" },
-      "accuracy_30m": { "name": "Genauigkeit 30 Minuten" },
-      "accuracy_1h": { "name": "Genauigkeit 1 Stunde" },
-      "accuracy_6h": { "name": "Genauigkeit 6 Stunden" },
-      "accuracy_today_morning": { "name": "Genauigkeit heute (Morgenprognose)" },
-      "accuracy_day_ahead": { "name": "Genauigkeit Vortagesprognose" },
+      "next_30m": {
+        "name": "Nächste 30 Minuten"
+      },
+      "next_1h": {
+        "name": "Nächste Stunde"
+      },
+      "next_6h": {
+        "name": "Nächste 6 Stunden"
+      },
+      "today": {
+        "name": "Heute"
+      },
+      "today_remaining": {
+        "name": "Heute verbleibend"
+      },
+      "tomorrow": {
+        "name": "Morgen"
+      },
+      "day_after_tomorrow": {
+        "name": "Übermorgen"
+      },
+      "peak_today": {
+        "name": "Spitzenleistung heute"
+      },
+      "peak_tomorrow": {
+        "name": "Spitzenleistung morgen"
+      },
+      "curve": {
+        "name": "Prognoseverlauf"
+      },
+      "accuracy_30m": {
+        "name": "Genauigkeit 30 Minuten"
+      },
+      "accuracy_1h": {
+        "name": "Genauigkeit 1 Stunde"
+      },
+      "accuracy_6h": {
+        "name": "Genauigkeit 6 Stunden"
+      },
+      "accuracy_today_morning": {
+        "name": "Genauigkeit heute (Morgenprognose)"
+      },
+      "accuracy_day_ahead": {
+        "name": "Genauigkeit Vortagesprognose"
+      },
       "status": {
         "name": "Modellstatus",
-        "state": { "learning": "Lernt", "ready": "Bereit", "error": "Fehler" }
+        "state": {
+          "learning": "Lernt",
+          "ready": "Bereit",
+          "error": "Fehler"
+        }
       }
     }
   },
@@ -78,6 +148,14 @@
     "training_failed": {
       "title": "PV-Anlage {plant}: Training fehlgeschlagen",
       "description": "Das bisherige Modell bleibt aktiv. Fehler: {error}"
+    }
+  },
+  "selector": {
+    "measurement": {
+      "options": {
+        "power": "Leistung (W, kW)",
+        "energy": "Energiezähler (Wh, kWh)"
+      }
     }
   }
 }

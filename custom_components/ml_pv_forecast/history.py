@@ -9,6 +9,7 @@ from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.statistics import statistics_during_period
 from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 POWER_UNITS = {unit.value for unit in UnitOfPower}
 ENERGY_UNITS = {unit.value for unit in UnitOfEnergy}
@@ -105,6 +106,25 @@ def _combine(per_entity: list[dict[int, float]]) -> tuple[np.ndarray, np.ndarray
         values[times < min(series)] = 0.0  # entity added later: no production before it
         total += values
     return times, total
+
+
+async def async_lowest_hourly_mean(
+    hass: HomeAssistant, entity_id: str, days: int = 30
+) -> float | None:
+    """Lowest hourly mean in W over the last days (None without statistics)."""
+    end = dt_util.utcnow()
+    result = await get_instance(hass).async_add_executor_job(
+        statistics_during_period,
+        hass,
+        end - timedelta(days=days),
+        end,
+        {entity_id},
+        "hour",
+        {"power": UnitOfPower.WATT},
+        {"mean"},
+    )
+    means = [row["mean"] for row in result.get(entity_id, []) if row.get("mean") is not None]
+    return min(means) if means else None
 
 
 def quarter_sums(times: np.ndarray, wh: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

@@ -4,67 +4,135 @@
       "user": {
         "title": "Machine-Learning-Based PV Forecast",
         "description": "The location is taken from Home Assistant. Add your PV plants afterwards with \"Add plant\".",
-        "data": { "evcc_enabled": "Provide a forecast endpoint for evcc" }
+        "data": {
+          "evcc_enabled": "Provide a forecast endpoint for evcc"
+        }
       }
     },
-    "abort": { "already_configured": "Already configured." }
+    "abort": {
+      "already_configured": "Already configured."
+    }
   },
   "options": {
     "step": {
-      "init": { "data": { "evcc_enabled": "Provide a forecast endpoint for evcc" } }
+      "init": {
+        "data": {
+          "evcc_enabled": "Provide a forecast endpoint for evcc"
+        }
+      }
     }
   },
   "config_subentries": {
     "plant": {
       "entry_type": "PV plant",
-      "initiate_flow": { "user": "Add plant" },
+      "initiate_flow": {
+        "user": "Add plant"
+      },
       "step": {
         "user": {
           "title": "Add PV plant",
-          "data": { "name": "Name", "entities": "Production sensors", "limit_w": "Export or inverter limit" },
+          "description": "A plant is everything one production sensor (or a group of sensors) measures, e.g. one inverter with all its panels, or a balcony plant. Panels facing different directions on one inverter are fine – the model learns the mix.",
+          "data": {
+            "name": "Name",
+            "measurement": "How is the production measured?"
+          },
           "data_description": {
-            "entities": "Power (W, kW) or energy (Wh, kWh) sensors. Their sum is this plant's production.",
-            "limit_w": "Optional. Leave empty to detect curtailment automatically."
+            "measurement": "Power: a sensor in W or kW. Energy: a meter reading in Wh or kWh that keeps counting up."
           }
         },
         "reconfigure": {
           "title": "Change PV plant",
-          "data": { "name": "Name", "entities": "Production sensors", "limit_w": "Export or inverter limit" },
+          "description": "A plant is everything one production sensor (or a group of sensors) measures, e.g. one inverter with all its panels, or a balcony plant. Panels facing different directions on one inverter are fine – the model learns the mix.",
+          "data": {
+            "name": "Name",
+            "measurement": "How is the production measured?"
+          },
           "data_description": {
-            "entities": "Power (W, kW) or energy (Wh, kWh) sensors. Their sum is this plant's production.",
-            "limit_w": "Optional. Leave empty to detect curtailment automatically."
+            "measurement": "Power: a sensor in W or kW. Energy: a meter reading in Wh or kWh that keeps counting up."
           }
+        },
+        "sensors": {
+          "title": "Production sensors",
+          "description": "Select the sensors that measure what the **panels** produce. Several sensors are added up.\n\n- Inverter with battery (hybrid): don't use the inverter's AC power, it includes battery discharge. Use the panels' DC production or an energy meter integrated from it.\n- Smart plug whose meter resets after a restart: prefer its power sensor.",
+          "data": {
+            "entities": "Sensors",
+            "limit_w": "Export or inverter limit (optional)"
+          },
+          "data_description": {
+            "limit_w": "If production is capped (e.g. 600 W balcony plant or an export limit). Leave empty to detect it automatically."
+          }
+        },
+        "confirm_negative": {
+          "title": "Is this the right sensor?",
+          "description": "{entity_id} went down to {lowest} W in the last 30 days. Panels never produce negative power – this is typical for an inverter's AC output with a battery charging from the grid. The forecast learns from this sensor, so the result may be wrong.\n\nContinue anyway, or go back and choose the panels' production sensor."
         }
       },
       "error": {
         "no_entities": "Select at least one sensor.",
         "missing": "Sensor not found.",
         "unsupported_unit": "The sensor must measure power (W, kW) or energy (Wh, kWh).",
-        "no_statistics": "The sensor has no long-term statistics (state_class is missing)."
+        "no_statistics": "The sensor has no long-term statistics (state_class is missing).",
+        "wrong_kind": "The sensor does not match the chosen measurement (power or energy)."
       },
-      "abort": { "reconfigure_successful": "Plant updated." }
+      "abort": {
+        "reconfigure_successful": "Plant updated."
+      }
     }
   },
   "entity": {
     "sensor": {
-      "next_30m": { "name": "Next 30 minutes" },
-      "next_1h": { "name": "Next hour" },
-      "next_6h": { "name": "Next 6 hours" },
-      "today": { "name": "Today" },
-      "today_remaining": { "name": "Today remaining" },
-      "tomorrow": { "name": "Tomorrow" },
-      "day_after_tomorrow": { "name": "Day after tomorrow" },
-      "peak_today": { "name": "Peak power today" },
-      "peak_tomorrow": { "name": "Peak power tomorrow" },
-      "curve": { "name": "Forecast curve" },
-      "accuracy_30m": { "name": "Accuracy 30 minutes" },
-      "accuracy_1h": { "name": "Accuracy 1 hour" },
-      "accuracy_6h": { "name": "Accuracy 6 hours" },
-      "accuracy_today_morning": { "name": "Accuracy today (morning forecast)" },
-      "accuracy_day_ahead": { "name": "Accuracy day ahead" },
+      "next_30m": {
+        "name": "Next 30 minutes"
+      },
+      "next_1h": {
+        "name": "Next hour"
+      },
+      "next_6h": {
+        "name": "Next 6 hours"
+      },
+      "today": {
+        "name": "Today"
+      },
+      "today_remaining": {
+        "name": "Today remaining"
+      },
+      "tomorrow": {
+        "name": "Tomorrow"
+      },
+      "day_after_tomorrow": {
+        "name": "Day after tomorrow"
+      },
+      "peak_today": {
+        "name": "Peak power today"
+      },
+      "peak_tomorrow": {
+        "name": "Peak power tomorrow"
+      },
+      "curve": {
+        "name": "Forecast curve"
+      },
+      "accuracy_30m": {
+        "name": "Accuracy 30 minutes"
+      },
+      "accuracy_1h": {
+        "name": "Accuracy 1 hour"
+      },
+      "accuracy_6h": {
+        "name": "Accuracy 6 hours"
+      },
+      "accuracy_today_morning": {
+        "name": "Accuracy today (morning forecast)"
+      },
+      "accuracy_day_ahead": {
+        "name": "Accuracy day ahead"
+      },
       "status": {
         "name": "Model status",
-        "state": { "learning": "Learning", "ready": "Ready", "error": "Error" }
+        "state": {
+          "learning": "Learning",
+          "ready": "Ready",
+          "error": "Error"
+        }
       }
     }
   },
@@ -80,6 +148,14 @@
     "training_failed": {
       "title": "PV plant {plant}: training failed",
       "description": "The previous model stays active. Error: {error}"
+    }
+  },
+  "selector": {
+    "measurement": {
+      "options": {
+        "power": "Power (W, kW)",
+        "energy": "Energy meter (Wh, kWh)"
+      }
     }
   }
 }

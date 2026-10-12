@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 – 2026-10-12
+
+- Fix: models saved by 0.1.x were treated as current after the update and kept in use instead of
+  being retrained with the new weather inputs.
+
 ## 0.2.0 – 2026-10-12
 
 - Forecasts use five weather models (best match, DWD ICON, Météo-France, ECMWF, NOAA GFS) with

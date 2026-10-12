@@ -160,7 +160,8 @@ def train(
 
 def is_current(model: PlantModel) -> bool:
     """False for models trained on an older feature set (pickles from before have no field)."""
-    return getattr(model, "feature_version", 1) == FEATURE_VERSION
+    # vars(): an unpickled old model would otherwise see the class default (the current version).
+    return vars(model).get("feature_version", 1) == FEATURE_VERSION
 
 
 def save_model(model: PlantModel, path: Path) -> None:

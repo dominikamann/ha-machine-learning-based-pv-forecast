@@ -101,3 +101,13 @@ def test_models_from_older_feature_sets_are_not_current():
     assert is_current(m)
     m.feature_version = 1
     assert not is_current(m)
+
+
+def test_model_pickled_before_versioning_is_not_current(tmp_path):
+    from custom_components.ml_pv_forecast.core.model import is_current
+
+    times, X, y = data(10)
+    m = fit_fallback(X, y, float(y.max()), 0)
+    del m.__dict__["feature_version"]  # what an unpickled 0.1.x model looks like
+    save_model(m, tmp_path / "old.pkl")
+    assert not is_current(load_model(tmp_path / "old.pkl"))

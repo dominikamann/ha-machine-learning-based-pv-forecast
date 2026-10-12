@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Machine-Learning-Based PV Forecast",
+        "description": "Der Standort wird aus Home Assistant übernommen. Füge danach deine PV-Anlagen über \"Anlage hinzufügen\" hinzu.",
+        "data": { "evcc_enabled": "Prognose-Endpunkt für evcc bereitstellen" }
+      }
+    },
+    "abort": { "already_configured": "Bereits eingerichtet." }
+  },
+  "options": {
+    "step": { "init": { "data": { "evcc_enabled": "Prognose-Endpunkt für evcc bereitstellen" } } }
+  },
+  "config_subentries": {
+    "plant": {
+      "entry_type": "PV-Anlage",
+      "initiate_flow": { "user": "Anlage hinzufügen" },
+      "step": {
+        "user": {
+          "title": "PV-Anlage hinzufügen",
+          "data": { "name": "Name", "entities": "Erzeugungssensoren", "limit_w": "Einspeise- oder Wechselrichterlimit" },
+          "data_description": {
+            "entities": "Leistungs- (W, kW) oder Energiesensoren (Wh, kWh). Ihre Summe ist die Erzeugung dieser Anlage.",
+            "limit_w": "Optional. Leer lassen, dann wird Abregelung automatisch erkannt."
+          }
+        },
+        "reconfigure": {
+          "title": "PV-Anlage ändern",
+          "data": { "name": "Name", "entities": "Erzeugungssensoren", "limit_w": "Einspeise- oder Wechselrichterlimit" },
+          "data_description": {
+            "entities": "Leistungs- (W, kW) oder Energiesensoren (Wh, kWh). Ihre Summe ist die Erzeugung dieser Anlage.",
+            "limit_w": "Optional. Leer lassen, dann wird Abregelung automatisch erkannt."
+          }
+        }
+      },
+      "error": {
+        "no_entities": "Mindestens einen Sensor auswählen.",
+        "missing": "Sensor nicht gefunden.",
+        "unsupported_unit": "Der Sensor muss Leistung (W, kW) oder Energie (Wh, kWh) messen.",
+        "no_statistics": "Der Sensor hat keine Langzeitstatistik (state_class fehlt)."
+      },
+      "abort": { "reconfigure_successful": "Anlage aktualisiert." }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_30m": { "name": "Nächste 30 Minuten" },
+      "next_1h": { "name": "Nächste Stunde" },
+      "next_6h": { "name": "Nächste 6 Stunden" },
+      "today": { "name": "Heute" },
+      "today_remaining": { "name": "Heute verbleibend" },
+      "tomorrow": { "name": "Morgen" },
+      "day_after_tomorrow": { "name": "Übermorgen" },
+      "peak_today": { "name": "Spitzenleistung heute" },
+      "peak_tomorrow": { "name": "Spitzenleistung morgen" },
+      "curve": { "name": "Prognoseverlauf" },
+      "accuracy_30m": { "name": "Genauigkeit 30 Minuten" },
+      "accuracy_1h": { "name": "Genauigkeit 1 Stunde" },
+      "accuracy_6h": { "name": "Genauigkeit 6 Stunden" },
+      "accuracy_today_morning": { "name": "Genauigkeit heute (Morgenprognose)" },
+      "accuracy_day_ahead": { "name": "Genauigkeit Vortag" },
+      "status": {
+        "name": "Modellstatus",
+        "state": { "learning": "Lernt", "ready": "Bereit", "error": "Fehler" }
+      }
+    }
+  },
+  "issues": {
+    "open_meteo_unreachable": {
+      "title": "Open-Meteo nicht erreichbar",
+      "description": "Die PV-Prognose konnte seit über 3 Stunden nicht aktualisiert werden: {error}"
+    },
+    "entity_problem": {
+      "title": "PV-Anlage {plant}: Sensorproblem",
+      "description": "Sensor {entity_id} der Anlage {plant} ist nicht nutzbar ({reason}). Die anderen Anlagen laufen weiter."
+    },
+    "training_failed": {
+      "title": "PV-Anlage {plant}: Training fehlgeschlagen",
+      "description": "Das bisherige Modell bleibt aktiv. Fehler: {error}"
+    }
+  }
+}

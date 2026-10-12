@@ -16,9 +16,7 @@ const TEXT = {
     actual: "Actual",
     forecast: "Forecast",
     morning: "This morning's forecast",
-    low: "Pessimistic (P10)",
-    high: "Optimistic (P90)",
-    now: "Now",
+    range: "Range (P10–P90)",
     today: "Today",
     tomorrow: "Tomorrow",
     dayAfter: "Day after tomorrow",
@@ -32,9 +30,7 @@ const TEXT = {
     actual: "Tatsächlich",
     forecast: "Prognose",
     morning: "Prognose von heute früh",
-    low: "Pessimistisch (P10)",
-    high: "Optimistisch (P90)",
-    now: "Jetzt",
+    range: "Bandbreite (P10–P90)",
     today: "Heute",
     tomorrow: "Morgen",
     dayAfter: "Übermorgen",
@@ -46,7 +42,7 @@ const TEXT = {
   },
 };
 
-const COLORS = { forecast: "#FFB300", band: "#FFB300", actual: "#43A047", morning: "#1E88E5" };
+const COLORS = { forecast: "#29B6F6", band: "#81D4FA", actual: "#66BB6A", morning: "#B39DDB" };
 
 function isForecastCurve(state) {
   const a = state && state.attributes;
@@ -196,15 +192,24 @@ class MlPvForecastCard extends HTMLElement {
     midnight.setHours(24, 0, 0, 0);
     const dayMarks = [t.tomorrow, t.dayAfter].slice(0, this._config.days - 1).map((label, i) => ({
       x: midnight.getTime() + i * 86400000,
-      borderColor: "var(--divider-color, #9E9E9E)",
+      borderColor: "#9E9E9E",
       strokeDashArray: 0,
-      label: { text: label, orientation: "horizontal", style: { background: "transparent" } },
+      label: {
+        text: label,
+        orientation: "horizontal",
+        position: "top",
+        textAnchor: "start",
+        offsetX: 6,
+        offsetY: -4,
+        borderWidth: 0,
+        style: { background: "transparent", color: "#9E9E9E", fontSize: "12px" },
+      },
     }));
     return {
       type: "custom:apexcharts-card",
       graph_span: `${this._config.days * 24}h`,
       span: { start: "day" },
-      now: { show: true, label: t.now, color: "#9E9E9E" },
+      now: { show: true, color: "#9E9E9E" },
       header: { show: false },
       yaxis: [{ min: 0, decimals: 1, apex_config: { title: { text: "kW" } } }],
       apex_config: {
@@ -217,8 +222,13 @@ class MlPvForecastCard extends HTMLElement {
       series: [
         line(t.actual, COLORS.actual, GEN.actual, { type: "column", stroke_width: 0, opacity: 0.85 }),
         line(t.forecast, COLORS.forecast, GEN.hourly("p50"), { type: "area", opacity: 0.25 }),
-        line(t.low, COLORS.band, GEN.hourly("p10"), { stroke_width: 1, opacity: 0.6, stroke_dash: 4 }),
-        line(t.high, COLORS.band, GEN.hourly("p90"), { stroke_width: 1, opacity: 0.6, stroke_dash: 4 }),
+        line(t.range, COLORS.band, GEN.hourly("p10"), { stroke_width: 1, opacity: 0.8, stroke_dash: 4 }),
+        line(t.range, COLORS.band, GEN.hourly("p90"), {
+          stroke_width: 1,
+          opacity: 0.8,
+          stroke_dash: 4,
+          show: { in_header: false, legend_value: false, in_legend: false },
+        }),
         line(t.morning, COLORS.morning, GEN.morning, { stroke_width: 2, stroke_dash: 6 }),
       ],
     };

@@ -150,3 +150,44 @@ async def test_retrain_service_rejects_unknown_plant(recorder_mock, hass, open_m
     await setup_plant(hass, open_meteo)
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(DOMAIN, "retrain", {"plant": "Nope"}, blocking=True)
+
+
+async def test_recent_actuals_are_backfilled_from_short_term_statistics(
+    recorder_mock, hass, open_meteo
+):
+    import numpy as np
+    from homeassistant.util import dt as dt_util
+
+    midnight = int(dt_util.start_of_local_day().timestamp())
+    five_min = midnight + 6 * 3600 + np.arange(12) * 300  # 06:00–07:00 local
+    real = __import__("custom_components.ml_pv_forecast.coordinator", fromlist=["x"])
+    original = real.async_production
+
+    async def fake_production(hass_, entity_ids, start, end, period):
+        if period == "5minute" and end - start > timedelta(hours=3):
+            return five_min, np.full(12, 25.0)
+        return await original(hass_, entity_ids, start, end, period)
+
+    with patch.object(real, "async_production", fake_production):
+        entry = await setup_plant(hass, open_meteo)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    coordinator = entry.runtime_data
+    plant_id = next(iter(coordinator.plants))
+    for key in (plant_id, "total"):
+        times, wh = await hass.async_add_executor_job(
+            coordinator.archive.actuals, key, midnight, midnight + 86400
+        )
+        assert len(times) == 4 and wh.tolist() == [75.0] * 4
+
+
+def test_morning_forecast_only_frozen_in_the_morning():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from custom_components.ml_pv_forecast.coordinator import MORNING_UNTIL_HOUR, should_freeze
+
+    tz = ZoneInfo("Europe/Berlin")
+    assert should_freeze(datetime(2026, 10, 12, 6, 0, tzinfo=tz), None)
+    assert not should_freeze(datetime(2026, 10, 12, 4, 0, tzinfo=tz), None)
+    assert not should_freeze(datetime(2026, 10, 12, MORNING_UNTIL_HOUR, 0, tzinfo=tz), None)
+    assert not should_freeze(datetime(2026, 10, 12, 6, 0, tzinfo=tz), "2026-10-12")

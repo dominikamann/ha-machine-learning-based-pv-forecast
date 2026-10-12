@@ -43,6 +43,18 @@ CORRECTION_DAYS = 365
 RETENTION = timedelta(days=730)
 SHORT_RETENTION_DAYS = CORRECTION_DAYS + 35  # short-horizon rows are the bulk of the archive
 MORNING_HOUR = 5
+MORNING_UNTIL_HOUR = 10  # a "morning forecast" issued later than this would be misleading
+BACKFILL = timedelta(days=10)  # Home Assistant keeps 5-minute statistics for 10 days by default
+
+
+def should_freeze(local_now: datetime, frozen_day: str | None) -> bool:
+    """Whether to freeze today's morning forecast now (once a day, only in the morning)."""
+    return (
+        MORNING_HOUR <= local_now.hour < MORNING_UNTIL_HOUR
+        and frozen_day != local_now.date().isoformat()
+    )
+
+
 LIVE_WINDOW = 2700
 
 
@@ -101,6 +113,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         self._weather: tuple[WeatherData, WeatherData] | None = None
         self._weather_failing_since: datetime | None = None
         self._morning_day: str | None = None
+        self._freeze_morning = False
         self._unsubscribe: list = []
 
     # ---- lifecycle -------------------------------------------------------------------------
@@ -141,6 +154,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         self._unsubscribe.append(async_at_started(self.hass, self._async_started))
 
     async def _async_started(self, hass: HomeAssistant) -> None:
+        self._background(self._async_backfill_actuals(), "backfill")
         for plant in self.plants.values():
             if plant.model is None:
                 self._start_training(plant)
@@ -155,6 +169,37 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         for plant in plants:
             self._start_training(plant)
         return len(plants)
+
+    async def _async_backfill_actuals(self) -> None:
+        """Take the last days of actual production from Home Assistant's 5-minute statistics.
+
+        The archive only records while the integration runs; without this, charts and evaluation
+        would start empty after installing (or miss what happened during a long downtime).
+        """
+        now = dt_util.utcnow()
+        parts = []
+        for plant in self.plants.values():
+            try:
+                times, wh = await async_production(
+                    self.hass, plant.entity_ids, now - BACKFILL, now, "5minute"
+                )
+            except EntityProblem:
+                continue
+            quarters = quarter_sums(times, wh)
+            parts.append(quarters)
+            await self.hass.async_add_executor_job(
+                self.archive.add_actuals, plant.plant_id, *quarters
+            )
+        if len(parts) == len(self.plants) and parts:
+            await self.hass.async_add_executor_job(
+                self.archive.add_actuals, TOTAL, *_sum_actuals(parts)
+            )
+        midnight = int(dt_util.start_of_local_day().timestamp())
+        for key in [*self.plants, TOTAL]:
+            self.actual_today[key] = await self.hass.async_add_executor_job(
+                self.archive.actuals, key, midnight, midnight + 2 * 86400
+            )
+        self.async_update_listeners()
 
     def _start_training(self, plant: PlantRuntime) -> None:
         plant.retry_at = dt_util.utcnow() + TRAIN_RETRY_AFTER
@@ -297,6 +342,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         forecasts[TOTAL] = total_forecast(list(forecasts.values()), now_ts)
         actuals[TOTAL] = _sum_actuals(list(actuals.values()))
         daily = self._daily_windows(now)
+        self._freeze_morning = should_freeze(dt_util.as_local(now), self._morning_day)
         midnight = int(dt_util.start_of_local_day().timestamp())
         await self.hass.async_add_executor_job(
             self._archive_cycle, forecasts, actuals, now_ts, daily, midnight
@@ -357,14 +403,16 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             windows = [(h, start, start + length) for h, length in SHORT_HORIZONS.items()]
             if daily is not None:
                 today, tomorrow, after, day = daily
-                windows += [("today_morning", today, tomorrow), ("day_ahead", tomorrow, after)]
-                mask = (fc.quarter_times >= today) & (fc.quarter_times < tomorrow)
-                curve = [
-                    [int(t), *map(float, v)]
-                    for t, v in zip(fc.quarter_times[mask], fc.quarter[mask], strict=True)
-                ]
-                self.archive.save_curve(key, day, curve)
-                self.morning[key] = curve
+                windows.append(("day_ahead", tomorrow, after))
+                if self._freeze_morning:
+                    windows.append(("today_morning", today, tomorrow))
+                    mask = (fc.quarter_times >= today) & (fc.quarter_times < tomorrow)
+                    curve = [
+                        [int(t), *map(float, v)]
+                        for t, v in zip(fc.quarter_times[mask], fc.quarter[mask], strict=True)
+                    ]
+                    self.archive.save_curve(key, day, curve)
+                    self.morning[key] = curve
             for horizon, w_start, w_end in windows:
                 p = fc.energy(w_start, w_end)
                 rows.append(

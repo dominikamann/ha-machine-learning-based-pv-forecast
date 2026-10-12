@@ -152,8 +152,10 @@ type: custom:ml-pv-forecast-card
 # title: PV
 ```
 
-It shows hourly bars of today's actual production, this morning's forecast, the live forecast
-with its P10–P90 range for today and the next days, a *now* marker and the daily totals.
+It shows hourly bars of today's actual production (green), the live forecast (blue) with its
+P10–P90 range, this morning's forecast (violet, dashed) for today and the next days, a *now*
+marker and the daily totals. Actual production of the last 10 days is taken from Home Assistant's
+statistics when the integration starts, so the chart is complete right after installing.
 It is also in the card picker as **PV Forecast**.
 
 ### More templates

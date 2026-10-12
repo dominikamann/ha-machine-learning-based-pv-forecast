@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.3 – 2026-10-12
+
+- Card: blue forecast, green actual, violet morning forecast; P10/P90 as one legend entry;
+  day separators and the *now* line without misplaced label boxes.
+- Actual production of the last 10 days is taken from Home Assistant's 5-minute statistics at
+  start-up, so charts and *Production today* are complete right after installing.
+- The morning forecast is only frozen before 10:00; after a later start that day has none instead
+  of a misleading afternoon forecast.
+
 ## 0.3.2 – 2026-10-12
 
 - *Production now* is available right after a restart for plants measured by an energy meter

@@ -154,3 +154,45 @@ async def test_status_history_unknown_for_models_without_history(recorder_mock, 
     await hass.async_block_till_done()
     attrs = hass.states.get(_entity(hass, entry, f"{plant.plant_id}_status")).attributes
     assert attrs["history_days"] is None and attrs["full_year"] is None
+
+
+async def test_energy_meter_power_available_right_after_start(
+    recorder_mock, hass, freezer, open_meteo
+):
+    from datetime import timedelta
+
+    from homeassistant.config_entries import ConfigSubentryData
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from pytest_homeassistant_custom_component.components.recorder.common import (
+        async_wait_recording_done,
+    )
+
+    from custom_components.ml_pv_forecast.const import CONF_ENTITIES, CONF_EVCC, DOMAIN
+
+    meter = {"unit_of_measurement": "kWh", "state_class": "total_increasing"}
+    start = dt_util.utcnow()
+    hass.states.async_set("sensor.meter", "10.000", meter)
+    await async_wait_recording_done(hass)
+    freezer.move_to(start + timedelta(minutes=5))
+    hass.states.async_set("sensor.meter", "10.050", meter)  # 50 Wh in 5 min = 600 W
+    await async_wait_recording_done(hass)
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options={CONF_EVCC: False},
+        subentries_data=[
+            ConfigSubentryData(
+                data={"name": "Roof", CONF_ENTITIES: ["sensor.meter"]},
+                subentry_type="plant",
+                title="Roof",
+                unique_id=None,
+            )
+        ],
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)  # like a restart: sensor starts fresh
+    await hass.async_block_till_done()
+    state = hass.states.get(_entity(hass, entry, "total_actual_power"))
+    assert state.state != "unavailable"
+    assert float(state.state) == pytest.approx(600.0, rel=0.01)

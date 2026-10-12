@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
+from functools import partial
 from typing import Any
 
 import numpy as np
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.history import state_changes_during_period
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant, callback
@@ -25,6 +29,9 @@ from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 from .const import DOMAIN, TOTAL
 from .coordinator import MlPvCoordinator
 from .history import EntityProblem, entity_kind
+
+_LOGGER = logging.getLogger(__name__)
+SEED_LOOKBACK = timedelta(minutes=30)
 
 
 @dataclass(frozen=True)
@@ -359,7 +366,41 @@ class ActualPowerSensor(ForecastEntity):
         self.async_on_remove(
             async_track_time_interval(self.hass, self._async_tick, timedelta(minutes=1))
         )
+        await self._async_seed_energy_meters()
         self._recompute()
+
+    async def _async_seed_energy_meters(self) -> None:
+        """Feed recent meter readings from the recorder, so power is known right after a restart."""
+        start = dt_util.utcnow() - SEED_LOOKBACK
+        for entity_id in self._sources:
+            current = self.hass.states.get(entity_id)
+            try:
+                if entity_kind(self.hass, entity_id) != "energy":
+                    continue
+            except EntityProblem:
+                continue
+            unit = current.attributes.get("unit_of_measurement")
+            try:
+                changes = await get_instance(self.hass).async_add_executor_job(
+                    partial(
+                        state_changes_during_period,
+                        self.hass,
+                        start,
+                        entity_id=entity_id,
+                        no_attributes=True,
+                        descending=True,
+                        limit=3,
+                    )
+                )
+            except Exception:  # noqa: BLE001 - seeding is best effort, live updates follow
+                _LOGGER.debug("Could not read recent states of %s", entity_id, exc_info=True)
+                continue
+            for state in reversed(changes.get(entity_id, [])):
+                try:
+                    wh = EnergyConverter.convert(float(state.state), unit, UnitOfEnergy.WATT_HOUR)
+                except ValueError:
+                    continue
+                self._meters[entity_id].update(wh, state.last_changed.timestamp())
 
     @callback
     def _async_source_changed(self, event) -> None:

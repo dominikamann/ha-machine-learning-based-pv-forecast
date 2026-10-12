@@ -63,18 +63,26 @@ afterwards).
    `https://github.com/dominikamann/ha-machine-learning-based-pv-forecast`, category *Integration*.
 2. Install **Machine-Learning-Based PV Forecast** and restart Home Assistant.
 3. *Settings → Devices & services → Add integration →* **Machine-Learning-Based PV Forecast**.
-4. On the integration, choose **Add plant**, give it a name and select its production sensors.
+4. On the integration, choose **Add plant**: give it a name, choose how production is measured
+   (power in W/kW or an energy meter in Wh/kWh), then pick the matching sensors. A power sensor
+   that goes clearly negative (typical for a hybrid inverter's AC output) asks for confirmation.
    Repeat for every plant.
+5. Add the **PV Forecast** card to a dashboard (see [Dashboard card](#dashboard-card)).
 
-The location is taken from Home Assistant. The first model is trained right after adding a plant.
+The location is taken from Home Assistant. The first model is trained as soon as Home Assistant
+has started; the first run downloads several years of weather and takes a few minutes (progress
+in the log). Weather is cached, later trainings only fetch the last days.
 
 ## Requirements
 
 - Production sensors with long-term statistics:
   - power sensors (W, kW) with `state_class: measurement`, or
   - energy sensors (Wh, kWh) with `state_class: total` or `total_increasing`.
-- The more history, the better. With less than 30 days of usable data a simple fallback model is
-  used and the status sensor shows *learning*.
+- History: all available long-term statistics are used (up to 6 years). **At least one year is
+  recommended** so the model has seen every season; the status sensor shows the covered days and
+  `full_year`. With less than 30 days a simple fallback model is used (status *learning*); with
+  less than a year the forecast is weaker for seasons not seen yet and improves with the weekly
+  retraining.
 - Optional per plant: the export or inverter limit in W. Without it, curtailment is detected
   automatically.
 - Home Assistant 2025.3 or newer (2026.3 or newer to show the integration's own icon).
@@ -129,10 +137,26 @@ Optional query parameters: `?plant=<plant id>` for a single plant and `?quantile
 (default `p50`; `p10` plans conservatively). The endpoint can be switched off in the integration
 options.
 
-## Dashboards
+## Dashboard card
 
-[`docs/dashboards/`](docs/dashboards) contains templates for
-[apexcharts-card](https://github.com/RomRider/apexcharts-card) (install it from HACS):
+The integration ships its own card. It needs
+[apexcharts-card](https://github.com/RomRider/apexcharts-card) (install it from HACS).
+
+```yaml
+type: custom:ml-pv-forecast-card
+# optional:
+# entity: sensor.pv_forecast_total_forecast_curve   # default: the total, found automatically
+# days: 3                                            # 1–3
+# title: PV
+```
+
+It shows hourly bars of today's actual production, this morning's forecast, the live forecast
+with its P10–P90 range for today and the next days, a *now* marker and the daily totals.
+It is also in the card picker as **PV Forecast**.
+
+### More templates
+
+[`docs/dashboards/`](docs/dashboards) contains further `apexcharts-card` templates:
 
 - `today.yaml` – actual production against this morning's forecast and the live forecast
 - `72h.yaml` – the next 72 hours per plant, stacked

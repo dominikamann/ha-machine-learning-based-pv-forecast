@@ -111,3 +111,11 @@ def test_model_pickled_before_versioning_is_not_current(tmp_path):
     del m.__dict__["feature_version"]  # what an unpickled 0.1.x model looks like
     save_model(m, tmp_path / "old.pkl")
     assert not is_current(load_model(tmp_path / "old.pkl"))
+
+
+def test_model_remembers_its_training_history():
+    times, X, y = data(40)
+    result = train(times, X, y, int(times[-1]) + 3600)
+    m = result.model
+    assert m.rows == result.rows > 0
+    assert times[0] <= m.history_start < m.history_end <= times[-1]

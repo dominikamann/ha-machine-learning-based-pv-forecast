@@ -102,10 +102,11 @@ async def test_history_uses_archive_before_2022_and_historical_after(tmp_path):
     client = OpenMeteoClient(session, 50.0, 10.0, tmp_path)
     w = await client.history(date(2021, 12, 1), date(2022, 1, 10), today=date(2026, 10, 12))
     urls = [c[0] for c in session.calls]
-    assert urls == [ARCHIVE_URL, HISTORICAL_URL]
-    assert w.is_reanalysis.tolist() == [1.0, 0.0]
+    # fixed 90-day boundaries: 2021-09-06..12-04, 2021-12-05..12-31 (ERA5), 2022-01-01.. (archive)
+    assert urls == [ARCHIVE_URL, ARCHIVE_URL, HISTORICAL_URL]
+    assert w.is_reanalysis.tolist() == [1.0, 1.0, 0.0]
     await client.history(date(2021, 12, 1), date(2022, 1, 10), today=date(2026, 10, 12))
-    assert len(session.calls) == 2  # second call served from cache
+    assert len(session.calls) == 3  # second call served from cache
 
 
 async def test_http_error_raises():
@@ -200,3 +201,18 @@ async def test_rate_limit_gives_up_after_retries(monkeypatch):
     session = FakeSession(lambda url, params: (429, {"error": True, "reason": "limit"}))
     with pytest.raises(OpenMeteoError, match="limit"):
         await OpenMeteoClient(session, 50.0, 10.0).forecast()
+
+
+async def test_cache_is_shared_between_different_start_dates(tmp_path):
+    def handler(url, params):
+        start = date.fromisoformat(params["start_date"])
+        t = int((start - date(1970, 1, 1)).days * 86400) + HOUR
+        return 200, {"hourly": multi_block([t])}
+
+    session = FakeSession(handler)
+    client = OpenMeteoClient(session, 50.0, 10.0, tmp_path)
+    today = date(2026, 10, 12)
+    await client.history(date(2023, 1, 5), date(2024, 6, 30), today)
+    first = len(session.calls)
+    await client.history(date(2023, 2, 20), date(2024, 6, 30), today)
+    assert len(session.calls) == first  # a plant starting later reuses every cached chunk

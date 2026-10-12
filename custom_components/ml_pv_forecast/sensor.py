@@ -279,9 +279,18 @@ class StatusSensor(ForecastEntity):
         if self._plant_id == TOTAL:
             return None
         plant = self.coordinator.plants[self._plant_id]
+        model = plant.model
+        # vars(): models saved before 0.3 have no history fields
+        start, end = (
+            (vars(model).get(k, 0) for k in ("history_start", "history_end")) if model else (0, 0)
+        )
+        days = round((end - start) / 86400) if start and end else 0
         return {
-            "model": None if plant.model is None else plant.model.kind,
+            "model": None if model is None else model.kind,
             "last_trained": None if plant.last_trained is None else _iso(plant.last_trained),
-            "rows": plant.rows,
+            "rows": vars(model).get("rows", plant.rows) if model else plant.rows,
+            "history_from": _iso(start) if start else None,
+            "history_days": days,
+            "full_year": days >= 365,
             "error": plant.error,
         }

@@ -41,6 +41,9 @@ class PlantModel:
     spread: tuple[float, float] = (0.6, 1.3)
     estimators: dict[float, Any] = field(default_factory=dict)
     feature_version: int = FEATURE_VERSION
+    rows: int = 0  # usable training hours
+    history_start: int = 0  # first and last training hour (unix seconds)
+    history_end: int = 0
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """P10, P50, P90 per row."""
@@ -102,6 +105,23 @@ def _mae(model: PlantModel, X: np.ndarray, y: np.ndarray) -> float:
 
 
 def train(
+    times: np.ndarray,
+    X: np.ndarray,
+    y: np.ndarray,
+    now: int,
+    active: PlantModel | None = None,
+    limit_w: float | None = None,
+) -> TrainResult:
+    """Train and record which history a newly fitted model has seen."""
+    result = _train(times, X, y, now, active, limit_w)
+    if result.model is not active:
+        result.model.rows = result.rows
+        result.model.history_start = int(times.min())
+        result.model.history_end = int(times.max())
+    return result
+
+
+def _train(
     times: np.ndarray,
     X: np.ndarray,
     y: np.ndarray,

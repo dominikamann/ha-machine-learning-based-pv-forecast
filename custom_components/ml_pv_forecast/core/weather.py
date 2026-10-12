@@ -23,6 +23,7 @@ PREVIOUS_RUNS_URL = "https://previous-runs-api.open-meteo.com/v1/forecast"
 HISTORICAL_START = date(2022, 1, 1)
 PREVIOUS_RUNS_START = date(2024, 1, 1)
 CHUNK_DAYS = 90
+CHUNK_EPOCH = date(2000, 1, 1)
 LEADS = (0, 1, 2)
 CACHE_VERSION = 2
 RATE_LIMIT_RETRIES = 5
@@ -249,7 +250,7 @@ class OpenMeteoClient:
                 break
             parts = [
                 await self._previous_runs_chunk(chunk_start, chunk_end, lead, today)
-                for chunk_start, chunk_end, _ in _chunks(first, end)
+                for chunk_start, chunk_end, _ in _chunks(first, end, floor=PREVIOUS_RUNS_START)
             ]
             leads.append(WeatherData.concat(parts))
         return leads
@@ -313,16 +314,25 @@ class OpenMeteoClient:
         return parse_block(payload, "hourly", HOUR, False, suffix="")
 
 
-def _chunks(start: date, end: date) -> Iterator[tuple[date, date, bool]]:
-    """Split [start, end] into pieces of at most CHUNK_DAYS not crossing HISTORICAL_START."""
-    current = start
-    while current <= end:
-        reanalysis = current < HISTORICAL_START
-        last = min(end, current + timedelta(days=CHUNK_DAYS - 1))
-        if reanalysis:
-            last = min(last, HISTORICAL_START - timedelta(days=1))
-        yield current, last, reanalysis
-        current = last + timedelta(days=1)
+def _chunks(start: date, end: date, floor: date | None = None) -> Iterator[tuple[date, date, bool]]:
+    """Cover [start, end] with pieces on fixed CHUNK_DAYS boundaries.
+
+    Fixed boundaries make cache files identical for every plant and every retraining, whatever
+    the first day of history is. Pieces never cross HISTORICAL_START and never begin before
+    ``floor`` (the first day an archive has data).
+    """
+    offset = (start - CHUNK_EPOCH).days // CHUNK_DAYS * CHUNK_DAYS
+    chunk_start = CHUNK_EPOCH + timedelta(days=offset)
+    while chunk_start <= end:
+        chunk_end = min(chunk_start + timedelta(days=CHUNK_DAYS - 1), end)
+        piece_start = max(chunk_start, floor) if floor else chunk_start
+        if piece_start <= chunk_end:
+            if piece_start < HISTORICAL_START <= chunk_end:
+                yield piece_start, HISTORICAL_START - timedelta(days=1), True
+                yield HISTORICAL_START, chunk_end, False
+            else:
+                yield piece_start, chunk_end, piece_start < HISTORICAL_START
+        chunk_start += timedelta(days=CHUNK_DAYS)
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:

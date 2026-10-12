@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 – 2026-10-12
+
+- Dashboard card `custom:ml-pv-forecast-card` (based on apexcharts-card): today's actual
+  production, this morning's and the live forecast, P10–P90 range and daily totals for up to
+  three days. The forecast curve sensor now carries today's actual production and the daily totals.
+- Clearer plant setup: choose power or energy first, only matching sensors are offered, hints for
+  hybrid inverters and smart plugs, confirmation for power sensors that go negative.
+- First training starts once Home Assistant has started; plants whose sensor was missing are
+  retrained as soon as it appears (instead of the next night).
+- Progress of downloads and training in the log.
+- Weather cache on fixed 90-day boundaries: shared by all plants and every retraining (one more
+  download after the update).
+- Status sensor shows the covered history (`history_from`, `history_days`, `full_year`).
+
 ## 0.2.1 – 2026-10-12
 
 - Fix: models saved by 0.1.x were treated as current after the update and kept in use instead of

@@ -80,3 +80,16 @@ async def test_card_script_is_served(recorder_mock, hass, hass_client, open_mete
     resp = await client.get("/ml_pv_forecast/ml-pv-forecast-card.js")
     assert resp.status == 200
     assert "ml-pv-forecast-card" in await resp.text()
+
+
+async def test_status_shows_history_coverage(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    registry = er.async_get(hass)
+    status = next(
+        e
+        for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        if e.unique_id.endswith("_status") and "total" not in e.unique_id
+    )
+    attrs = hass.states.get(status.entity_id).attributes
+    assert attrs["history_days"] >= 50 and attrs["history_from"] and attrs["rows"] > 0
+    assert attrs["full_year"] is False

@@ -116,3 +116,15 @@ async def test_sensor_missing_for_long_raises_repair(recorder_mock, hass, open_m
     plant.problem_since -= timedelta(minutes=31)
     await coordinator.async_refresh()
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"entity_{plant.plant_id}") is not None
+
+
+async def test_plant_without_model_trains_once_its_sensor_is_back(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    # State after a start-up where the sensor did not exist yet and training failed.
+    plant.model, plant.status, plant.error = None, "learning", "sensor.pv: missing"
+    plant.retry_at = None
+    await coordinator.async_refresh()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert plant.model is not None and plant.error is None

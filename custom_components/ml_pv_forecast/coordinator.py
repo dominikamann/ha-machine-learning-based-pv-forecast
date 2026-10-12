@@ -28,7 +28,7 @@ from .core.nowcast import DEFAULT_TAU, live_ratio
 from .core.pipeline import PlantForecast, forecast_plant, total_forecast, train_plant, window_cloud
 from .core.solar import sun_position
 from .core.weather import OpenMeteoClient, OpenMeteoError, WeatherData
-from .history import EntityProblem, async_production, quarter_sums
+from .history import EntityProblem, async_production, entity_kind, quarter_sums
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ HISTORY_DAYS = 6 * 365
 WEATHER_MAX_AGE = timedelta(minutes=55)
 WEATHER_REPAIR_AFTER = timedelta(hours=3)
 ENTITY_REPAIR_AFTER = timedelta(minutes=30)
+TRAIN_RETRY_AFTER = timedelta(hours=1)
 EVALUATION_DAYS = 30
 CORRECTION_DAYS = 365
 RETENTION = timedelta(days=730)
@@ -64,6 +65,7 @@ class PlantRuntime:
     correction: Correction | None = None
     tau: float = DEFAULT_TAU
     problem_since: datetime | None = None
+    retry_at: datetime | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -133,16 +135,20 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             async_track_time_change(self.hass, self._nightly, hour=2, minute=30, second=0),
             async_track_time_change(self.hass, self._weekly, hour=3, minute=0, second=0),
         ]
-        for plant in self.plants.values():
-            if plant.model is None:
-                self._background(self.async_train(plant.plant_id), f"train_{plant.plant_id}")
         self._background(self.async_evaluate(dt_util.utcnow()), "evaluate")
-        if not self.hass.is_running:
-            # Sensors of integrations that load after us exist once Home Assistant has started.
-            self._unsubscribe.append(async_at_started(self.hass, self._async_started))
+        # Train only once Home Assistant has started: sensors of integrations that load after us
+        # (ESPHome, Shelly, ...) do not exist before. Runs right away if HA is already running.
+        self._unsubscribe.append(async_at_started(self.hass, self._async_started))
 
     async def _async_started(self, hass: HomeAssistant) -> None:
+        for plant in self.plants.values():
+            if plant.model is None:
+                self._start_training(plant)
         await self.async_request_refresh()
+
+    def _start_training(self, plant: PlantRuntime) -> None:
+        plant.retry_at = dt_util.utcnow() + TRAIN_RETRY_AFTER
+        self._background(self.async_train(plant.plant_id), f"train_{plant.plant_id}")
 
     def _background(self, coro, name: str) -> None:
         # Tracked by the entry, so HA cancels it on unload before the archive is closed.
@@ -244,6 +250,10 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         actuals: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         for plant in self.plants.values():
             if plant.model is None:
+                # No model yet (first start, or training failed): retry once the sensor is usable.
+                retry_due = plant.retry_at is None or now >= plant.retry_at
+                if retry_due and not plant.lock.locked() and self._entities_usable(plant):
+                    self._start_training(plant)
                 continue
             try:
                 times, wh = await async_production(
@@ -284,6 +294,14 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         if daily is not None:
             self._morning_day = daily[3]
         return forecasts
+
+    def _entities_usable(self, plant: PlantRuntime) -> bool:
+        try:
+            for entity_id in plant.entity_ids:
+                entity_kind(self.hass, entity_id)
+        except EntityProblem:
+            return False
+        return True
 
     def _live_ratio(self, plant: PlantRuntime, times: np.ndarray, wh: np.ndarray) -> float | None:
         previous = (self.data or {}).get(plant.plant_id)
@@ -377,7 +395,14 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                     raise NotEnoughData("no statistics yet")
                 first = dt_util.utc_from_timestamp(int(times[0])).date()
                 last = (now - timedelta(days=1)).date()
+                _LOGGER.info(
+                    "Training %s: loading weather %s to %s (first run takes several minutes)",
+                    plant.name,
+                    first,
+                    last,
+                )
                 weather = await self.client.history_leads(first, max(first, last), now.date())
+                _LOGGER.info("Training %s: fitting models", plant.name)
                 result = await self.hass.async_add_executor_job(
                     train_plant,
                     times,
@@ -410,7 +435,15 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                     save_model, result.model, self._model_path(plant_id)
                 )
             plant.model, plant.status, plant.rows = result.model, result.status, result.rows
-            plant.error, plant.last_trained = None, now_ts
+            plant.error, plant.last_trained, plant.retry_at = None, now_ts, None
+            _LOGGER.info(
+                "Training %s done in %.0f s: %s model, %d hours, %s",
+                plant.name,
+                (dt_util.utcnow() - now).total_seconds(),
+                result.model.kind,
+                result.rows,
+                "now active" if result.promoted else "previous model kept",
+            )
             self._clear_issue(f"training_{plant_id}")
         await self.async_request_refresh()
 

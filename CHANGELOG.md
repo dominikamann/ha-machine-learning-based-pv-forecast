@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 – 2026-10-12
+
+- Card: days of the overview stacked vertically (readable on phones), a full-width tab bar with
+  short names, `layout: timeline` for all days in one continuous chart, compact day headings,
+  sun hours detected relative to the day's peak.
+- README with screenshots.
+
 ## 0.4.0 – 2026-10-12
 
 - Card with four views: **Overview**, **Day by day** (rotates through today, tomorrow and the day

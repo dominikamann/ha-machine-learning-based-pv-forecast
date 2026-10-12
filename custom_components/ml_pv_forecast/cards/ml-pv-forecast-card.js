@@ -13,6 +13,7 @@
  *   days: 3                                            # overview: 1–3, optional
  *   view: overview                       # start view: overview | carousel | today | review
  *   interval: 10                                       # carousel: seconds per day
+ *   layout: stacked                                    # overview: stacked | timeline
  *   tabs: true                                         # false shows only the start view
  *   title: PV                                          # optional, no title by default
  */
@@ -20,8 +21,8 @@
 const TEXT = {
   en: {
     overview: "Overview",
-    carousel: "Day by day",
-    todayTab: "Rest of today",
+    carousel: "Days",
+    todayTab: "Today",
     review: "Review",
     actual: "Actual",
     forecast: "Forecast",
@@ -45,8 +46,8 @@ const TEXT = {
   },
   de: {
     overview: "Übersicht",
-    carousel: "Tag für Tag",
-    todayTab: "Heute noch",
+    carousel: "Tage",
+    todayTab: "Heute",
     review: "Rückblick",
     actual: "Tatsächlich",
     forecast: "Prognose",
@@ -118,8 +119,11 @@ function localMidnight(offsetDays = 0) {
 
 // Hours of a day [start, end) that are worth showing: production or forecast, plus one hour.
 function sunWindow(dayStart, points) {
-  const hours = points
-    .filter(([t, v]) => t >= dayStart && t < dayStart + DAY && v > 0.005)
+  const day = points.filter(([t]) => t >= dayStart && t < dayStart + DAY);
+  // Relative threshold: meters report tiny values at night that are not sun.
+  const threshold = Math.max(0.005, 0.03 * Math.max(0, ...day.map(([, v]) => v)));
+  const hours = day
+    .filter(([, v]) => v > threshold)
     .map(([t]) => Math.floor((t - dayStart) / HOUR));
   if (!hours.length) return [6, 20];
   let start = Math.max(0, Math.min(...hours) - 1);
@@ -140,7 +144,9 @@ class MlPvForecastCard extends HTMLElement {
     if (!VIEWS.includes(view)) throw new Error(`view must be one of ${VIEWS.join(", ")}`);
     const interval = Number(config.interval ?? 10);
     if (!(interval >= 2)) throw new Error("interval must be at least 2 seconds");
-    this._config = { tabs: true, ...config, days, view, interval };
+    const layout = config.layout ?? "stacked";
+    if (!["stacked", "timeline"].includes(layout)) throw new Error("layout must be stacked or timeline");
+    this._config = { tabs: true, ...config, days, view, interval, layout };
     this._view = view;
     this._reviewIndex = 0;
     this._dayIndex = 0;
@@ -260,7 +266,6 @@ class MlPvForecastCard extends HTMLElement {
       this._charts = [];
       const grid = document.createElement("div");
       grid.className = "charts";
-      grid.style.gridTemplateColumns = specs.map((s) => `${s.weight}fr`).join(" ");
       for (const spec of specs) {
         const column = document.createElement("div");
         column.className = "column";
@@ -296,13 +301,13 @@ class MlPvForecastCard extends HTMLElement {
     const style = document.createElement("style");
     style.textContent = `
       .header { padding: 12px 16px 0; }
-      .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
-      .title { font-size: 1.15em; font-weight: 500; }
-      .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
-      .tab { border: 1px solid var(--divider-color); background: none; color: var(--secondary-text-color);
-             border-radius: 14px; padding: 3px 12px; font-size: 0.85em; cursor: pointer; }
-      .tab.active { background: var(--primary-color); border-color: var(--primary-color);
-                    color: var(--text-primary-color, #fff); }
+      .title { font-size: 1.15em; font-weight: 500; margin-bottom: 8px; }
+      .tabs { display: flex; border: 1px solid var(--divider-color); border-radius: 8px; overflow: hidden; }
+      .tab { flex: 1 1 0; min-width: 0; border: none; border-left: 1px solid var(--divider-color);
+             background: none; color: var(--secondary-text-color); padding: 6px 4px; font-size: 0.85em;
+             cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .tab:first-child { border-left: none; }
+      .tab.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
       .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
                gap: 4px 16px; margin-top: 12px; }
       .stat .label, .col-head .label { color: var(--secondary-text-color); font-size: 0.8em; }
@@ -314,10 +319,12 @@ class MlPvForecastCard extends HTMLElement {
                     width: 28px; height: 28px; color: var(--primary-text-color); cursor: pointer; }
       .nav button:disabled { opacity: 0.3; cursor: default; }
       .body { padding: 4px 4px 8px; }
-      .charts { display: grid; gap: 0; }
-      .column { min-width: 0; border-left: 1px solid var(--divider-color); }
-      .column:first-child { border-left: none; }
-      .col-head { padding: 8px 12px 0; }
+      .charts { display: flex; flex-direction: column; }
+      .column { min-width: 0; border-top: 1px solid var(--divider-color); }
+      .column:first-child { border-top: none; }
+      .col-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 10px 12px 0; }
+      .col-head .label { font-size: 0.9em; }
+      .col-head .value { font-size: 1.05em; }
       .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px;
                 font-size: 0.8em; color: var(--secondary-text-color); padding: 0 12px; }
       .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px;
@@ -382,7 +389,7 @@ class MlPvForecastCard extends HTMLElement {
             }</button>`
         ).join("")}</div>`
       : "";
-    const top = title || tabs ? `<div class="top">${title}${tabs}</div>` : "";
+    const top = title + tabs;
     if (this._view === "today") return top + this._todayStats(state, t);
     if (this._view === "review") return top + this._reviewStats(state, t);
     if (this._view === "carousel") return top + this._carouselStats(state, t);
@@ -396,8 +403,8 @@ class MlPvForecastCard extends HTMLElement {
   }
 
   _colHead(label, value, sub) {
-    return `<div class="col-head"><div class="label">${label}</div><div class="value">${value}</div>${
-      sub ? `<div class="sub">${sub}</div>` : '<div class="sub">&nbsp;</div>'
+    return `<div class="col-head"><span class="label">${label}</span><span class="value">${value}</span>${
+      sub ? `<span class="sub">· ${sub}</span>` : ""
     }</div>`;
   }
 
@@ -501,7 +508,7 @@ class MlPvForecastCard extends HTMLElement {
     ];
   }
 
-  _chart({ entity, start, hours, max, yAxis, now, series }) {
+  _chart({ entity, start, hours, max, yAxis, now, series, height = 230 }) {
     const offset = Math.round((start - localMidnight()) / HOUR);
     return {
       type: "custom:apexcharts-card",
@@ -518,7 +525,7 @@ class MlPvForecastCard extends HTMLElement {
         },
       ],
       apex_config: {
-        chart: { height: 230, parentHeightOffset: 0 },
+        chart: { height, parentHeightOffset: 0 },
         legend: { show: false },
         grid: { padding: { left: yAxis ? 0 : 8, right: 8 } },
         xaxis: { labels: { datetimeUTC: false, format: "HH:mm" }, tickAmount: 4 },
@@ -599,6 +606,9 @@ class MlPvForecastCard extends HTMLElement {
         },
       ];
     }
+    if (this._view === "overview" && this._config.layout === "timeline") {
+      return [this._timelineSpec(entity, state, t)];
+    }
     // Overview: one chart per day, each covering only the hours with sun, sharing one kW scale.
     const hourly = (a.hourly || []).map((r) => [new Date(r.time).getTime(), r.p90 / 1000]);
     const actual = (a.actual || []).map((r) => [new Date(r.time).getTime(), r.w / 1000]);
@@ -644,7 +654,8 @@ class MlPvForecastCard extends HTMLElement {
           start: dayStart + from * HOUR,
           hours: to - from,
           max,
-          yAxis: i === indices[0],
+          yAxis: true,
+          height: this._view === "carousel" ? 230 : 160,
           now: i === 0,
           series,
         }),
@@ -653,6 +664,65 @@ class MlPvForecastCard extends HTMLElement {
     return specs;
   }
 }
+
+MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
+  // All days in one continuous chart (nights included), with the day totals as heading.
+  const a = state.attributes;
+  const daily = a.daily || {};
+  const actualKwh = (a.actual || []).reduce((sum, r) => sum + r.w, 0) / 4 / 1000;
+  const parts = [
+    `${t.today} <b>${this._kwh(daily.today)}</b> <span class="sub">(${t.sofar} ${this._kwh(actualKwh)})</span>`,
+    `${t.tomorrow} <b>${this._kwh(daily.tomorrow)}</b>`,
+    `${t.dayAfter} <b>${this._kwh(daily.day_after_tomorrow)}</b>`,
+  ].slice(0, this._config.days);
+  const marks = [t.tomorrow, t.dayAfter].slice(0, this._config.days - 1).map((label, i) => ({
+    x: localMidnight(i + 1),
+    borderColor: "#9E9E9E",
+    strokeDashArray: 0,
+    label: {
+      text: label,
+      orientation: "horizontal",
+      position: "top",
+      textAnchor: "start",
+      offsetX: 6,
+      offsetY: -4,
+      borderWidth: 0,
+      style: { background: "transparent", color: "#9E9E9E", fontSize: "12px" },
+    },
+  }));
+  const config = this._chart({
+    entity,
+    start: localMidnight(),
+    hours: this._config.days * 24,
+    max: this._maxKw((a.hourly || []).map((r) => r.p90 / 1000)),
+    yAxis: true,
+    now: true,
+    height: 260,
+    series: [
+      this._series(entity, t.actual, COLORS.actual, GEN.actual, {
+        type: "column",
+        stroke_width: 0,
+        opacity: 0.85,
+      }),
+      this._series(entity, t.forecast, COLORS.forecast, GEN.hourly("p50"), {
+        type: "area",
+        opacity: 0.3,
+      }),
+      ...this._band(entity, t, GEN.hourly("p10"), GEN.hourly("p90")),
+      this._series(entity, t.morning, COLORS.morning, GEN.morning, { stroke_dash: 6 }),
+    ],
+  });
+  config.apex_config.annotations = { xaxis: marks };
+  config.apex_config.xaxis = {
+    labels: { datetimeUTC: false, format: "HH:mm" },
+    tickAmount: this._config.days * 4, // a label every 6 hours
+  };
+  return {
+    key: "timeline",
+    head: `<div class="col-head">${parts.join('<span class="sub">·</span>')}</div>`,
+    config,
+  };
+};
 
 customElements.define("ml-pv-forecast-card", MlPvForecastCard);
 window.customCards = window.customCards || [];

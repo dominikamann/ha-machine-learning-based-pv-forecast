@@ -12,6 +12,10 @@ trains one model per plant. Panels in several directions on one inverter, shadin
 neighbour's roof, a balcony plant: the model learns what your plant actually does instead of what a
 datasheet says it should do.
 
+<p align="center">
+  <img src="images/overview.png" alt="PV forecast card: actual production and forecast for today and the next two days" width="720">
+</p>
+
 ## Features
 
 - Forecasts for the **next 30 minutes, next hour, next 6 hours, today, today remaining, tomorrow and
@@ -150,6 +154,7 @@ type: custom:ml-pv-forecast-card
 # all optional:
 # entity: sensor.pv_forecast_total_forecast_curve   # default: the total, found automatically
 # view: overview                         # start view: overview | carousel | today | review
+# layout: stacked                                    # overview: stacked (one chart per day) | timeline
 # interval: 10                                       # carousel: seconds per day
 # tabs: true                                         # false: show only the start view
 # days: 3                                            # overview: 1–3 days
@@ -161,12 +166,19 @@ Four views, switched with the tabs at the top of the card:
 - **Overview** – one chart per day, covering only the hours with sun: hourly bars of the actual
   production (green), the live forecast (blue) with its P10–P90 range and this morning's forecast
   (violet, dashed), with the day's totals above each chart. All days share one kW scale.
+  `layout: timeline` shows all days in one continuous chart instead.
 - **Day by day** (`carousel`) – today, tomorrow and the day after one at a time, full width,
   switching automatically every `interval` seconds; the dots jump to a day.
 - **Rest of today** – what is still to come today in 15-minute steps: expected energy with range,
   the strongest hour and when production ends.
 - **Review** – step back through the last 7 days with ‹ ›: this morning's forecast against the
   actual production, the hit rate and how many hours were inside the range.
+
+| Overview, one chart per day | `layout: timeline`, all days in one chart |
+|---|---|
+| ![Overview](images/overview.png) | ![Timeline](images/timeline.png) |
+| **Days** – one day at a time, rotating | **On a phone** |
+| ![Days](images/days.png) | ![Phone](images/overview-mobile.png) |
 
 Want separate cards instead? Use one card per view with `view:` and `tabs: false`. The card is
 also in the card picker as **PV Forecast**. Actual production of the last 10 days is taken from

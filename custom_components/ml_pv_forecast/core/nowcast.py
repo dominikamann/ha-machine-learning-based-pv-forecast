@@ -17,6 +17,8 @@ def live_ratio(
     window_hours: float = 0.75,
 ) -> float | None:
     """Actual/forecast over the recent window, or None when it is not meaningful."""
+    if not (np.isfinite(actual_wh) and np.isfinite(forecast_wh)):
+        return None
     if elevation <= 5.0 or forecast_wh < 0.05 * capacity_wh * window_hours:
         return None
     return float(np.clip(actual_wh / forecast_wh, 0.0, 2.0))

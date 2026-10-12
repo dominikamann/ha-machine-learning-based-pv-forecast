@@ -33,3 +33,7 @@ def test_fit_tau_recovers_true_decay():
 
 def test_fit_tau_default_with_little_data():
     assert fit_tau(np.ones(3), np.ones(3), np.ones(3), np.ones(3)) == 90.0
+
+
+def test_live_ratio_ignores_missing_actuals():
+    assert live_ratio(float("nan"), 1000, 30, 4000) is None

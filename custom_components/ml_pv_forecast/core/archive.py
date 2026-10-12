@@ -53,6 +53,12 @@ class EvalRow:
     persistence: float | None
 
 
+def _finite(row: ArchivedForecast) -> bool:
+    """Rows with NaN would violate NOT NULL (sqlite stores NaN as NULL)."""
+    values = [v for k, v in vars(row).items() if isinstance(v, float) and k != "ratio"]
+    return all(np.isfinite(values)) and (row.ratio is None or np.isfinite(row.ratio))
+
+
 class Archive:
     """Blocking sqlite store; call from the executor."""
 
@@ -82,7 +88,7 @@ class Archive:
         with self._lock, self._db:
             self._db.executemany(
                 "INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                [astuple(r) for r in rows],
+                [astuple(r) for r in rows if _finite(r)],
             )
 
     def add_actuals(self, plant: str, times: np.ndarray, wh: np.ndarray) -> None:

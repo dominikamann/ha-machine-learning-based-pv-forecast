@@ -37,3 +37,11 @@ def test_corrupt_database_is_replaced(tmp_path):
     assert ar.recovered
     assert list(tmp_path.glob("a.db.corrupt-*"))
     ar.close()
+
+
+def test_non_finite_forecasts_are_skipped(tmp_path):
+    ar = Archive(tmp_path / "a.db")
+    ar.add_forecasts([fc(0, 3600, float("nan")), fc(3600, 7200, 5.0, issued=1)])
+    ar.add_actuals("a", np.arange(0, 7200, 900), np.ones(8))
+    assert len(ar.evaluated("a", None, 0, 10**9)) == 1
+    ar.close()

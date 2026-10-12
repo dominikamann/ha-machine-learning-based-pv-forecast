@@ -115,5 +115,7 @@ def quarter_sums(times: np.ndarray, wh: np.ndarray) -> tuple[np.ndarray, np.ndar
     unique, inverse, counts = np.unique(quarter, return_inverse=True, return_counts=True)
     sums = np.zeros(len(unique))
     np.add.at(sums, inverse, wh)
-    keep = counts == 3
+    has_gap = np.zeros(len(unique), dtype=bool)
+    np.logical_or.at(has_gap, inverse, ~np.isfinite(wh))
+    keep = (counts == 3) & ~has_gap
     return unique[keep], sums[keep]

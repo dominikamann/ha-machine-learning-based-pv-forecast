@@ -37,8 +37,11 @@ datasheet says it should do.
 - **No geometry**: internally the irradiance on seven fixed virtual planes (flat, 30° east to west,
   60° south) is computed. They are model inputs, identical for every installation; the model learns
   which mix fits your plant.
-- **Model**: gradient boosting (scikit-learn) per plant with quantile outputs; recent data counts
-  more than old data. Curtailment, outages and night hours are removed before training.
+- **Model**: histogram gradient boosting per plant with quantile outputs (P10/P50/P90); recent
+  data counts more than old data. Curtailment, outages and night hours are removed before training.
+  The boosting is a small numpy implementation of the algorithm behind scikit-learn's
+  `HistGradientBoostingRegressor` (tested against it), because scikit-learn cannot be installed on
+  Home Assistant OS. The only extra dependency is scipy.
 - **Every night**: accuracy per horizon, correction layer, short-term decay; **every Sunday**:
   retraining with a promotion gate.
 
@@ -64,6 +67,16 @@ The location is taken from Home Assistant. The first model is trained right afte
   used and the status sensor shows *learning*.
 - Optional per plant: the export or inverter limit in W. Without it, curtailment is detected
   automatically.
+- Home Assistant 2025.3 or newer (2026.3 or newer to show the integration's own icon).
+
+### Choosing the right sensor
+
+Use a sensor that measures what the **panels** produce:
+
+- Hybrid inverters with a battery (e.g. SolarEdge StorEdge): the inverter's AC power includes
+  battery discharge and can go negative while charging from the grid. Use the panel production
+  instead (DC power of inverter and battery combined, or an energy sensor integrated from it).
+- Smart plugs whose energy counter resets after a restart: prefer the power sensor.
 
 ## Sensors
 
@@ -127,7 +140,11 @@ uv run python tools/backtest.py --url http://homeassistant.local:8123 \
 ```
 
 It trains on everything except the last 12 months and reports the daily error of the model and of
-a physics baseline over those 12 months.
+a physics baseline over those 12 months. The model is trained once and not updated during those
+12 months, so live results with weekly retraining and the correction layer tend to be better.
+
+On two real plants the daily error over 12 months was 8.9 % and 11.0 %, against 11.2 % and
+14.1 % for the physics baseline (days on which a plant was switched off excluded).
 
 ## Troubleshooting
 

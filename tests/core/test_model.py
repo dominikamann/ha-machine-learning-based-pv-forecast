@@ -72,12 +72,12 @@ def test_no_production_raises():
 def test_save_load_roundtrip_and_corrupt_file(tmp_path):
     times, X, y = data(10)
     m = fit_fallback(X, y, float(y.max()), 0)
-    path = tmp_path / "m.joblib"
+    path = tmp_path / "m.pkl"
     save_model(m, path)
     np.testing.assert_allclose(load_model(path).predict(X), m.predict(X))
     path.write_bytes(b"garbage")
     assert load_model(path) is None
-    assert load_model(tmp_path / "missing.joblib") is None
+    assert load_model(tmp_path / "missing.pkl") is None
 
 
 def test_fresh_refit_replaces_older_model_after_a_change():

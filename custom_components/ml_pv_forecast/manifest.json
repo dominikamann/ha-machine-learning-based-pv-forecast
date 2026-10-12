@@ -8,6 +8,6 @@
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/issues",
-  "requirements": ["scikit-learn>=1.6"],
-  "version": "0.1.0"
+  "requirements": ["scipy>=1.13"],
+  "version": "0.1.1"
 }

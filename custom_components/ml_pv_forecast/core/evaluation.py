@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from sklearn.ensemble import HistGradientBoostingRegressor
 
 from .archive import EvalRow
+from .gbm import GradientBoosting
 from .nowcast import DEFAULT_TAU, fit_tau
 
 DAY = 86400
@@ -71,9 +71,9 @@ def _row_features(rows: list[EvalRow]) -> np.ndarray:
     )
 
 
-def _fit(X: np.ndarray, y: np.ndarray) -> HistGradientBoostingRegressor:
-    return HistGradientBoostingRegressor(
-        max_iter=100, learning_rate=0.05, min_samples_leaf=30, random_state=0
+def _fit(X: np.ndarray, y: np.ndarray) -> GradientBoosting:
+    return GradientBoosting(
+        loss="squared_error", max_iter=100, learning_rate=0.05, min_samples_leaf=30
     ).fit(X, y)
 
 
@@ -84,7 +84,7 @@ class Correction:
     is fitted on exactly what it is later applied to: hourly model predictions.
     """
 
-    def __init__(self, estimator: HistGradientBoostingRegressor) -> None:
+    def __init__(self, estimator: GradientBoosting) -> None:
         self._estimator = estimator
 
     def factors(

@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import joblib
 import numpy as np
 from scipy.optimize import nnls
-from sklearn.ensemble import HistGradientBoostingRegressor
 
 from .cleaning import effective_capacity, usable_mask
 from .features import PLANE_COLUMNS, col
+from .gbm import GradientBoosting
 
 QUANTILES = (0.1, 0.5, 0.9)
 DAY = 86400
@@ -90,16 +90,7 @@ def fit_gbm(
     target = y / capacity
     estimators = {}
     for q in QUANTILES:
-        estimator = HistGradientBoostingRegressor(
-            loss="quantile",
-            quantile=q,
-            learning_rate=0.05,
-            max_iter=300,
-            max_leaf_nodes=31,
-            min_samples_leaf=20,
-            l2_regularization=0.1,
-            random_state=0,
-        )
+        estimator = GradientBoosting(loss="quantile", quantile=q)
         estimator.fit(X, target, sample_weight=weights)
         estimators[q] = estimator
     return PlantModel("gbm", capacity, now, estimators=estimators)
@@ -169,7 +160,7 @@ def train(
 def save_model(model: PlantModel, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    joblib.dump(model, tmp)
+    tmp.write_bytes(pickle.dumps(model))
     tmp.replace(path)
 
 
@@ -178,7 +169,7 @@ def load_model(path: Path) -> PlantModel | None:
     if not path.exists():
         return None
     try:
-        model = joblib.load(path)
+        model = pickle.loads(path.read_bytes())
     except Exception:  # noqa: BLE001 - a corrupt pickle can raise almost anything
         return None
     return model if isinstance(model, PlantModel) else None

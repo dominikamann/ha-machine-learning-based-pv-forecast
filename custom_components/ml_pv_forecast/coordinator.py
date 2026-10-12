@@ -149,7 +149,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             await self.hass.async_add_executor_job(self.archive.close)
 
     def _model_path(self, plant_id: str) -> Path:
-        return self.base_dir / "models" / f"{plant_id}.joblib"
+        return self.base_dir / "models" / f"{plant_id}.pkl"
 
     def capacity(self, plant_id: str) -> float:
         if plant_id == TOTAL:

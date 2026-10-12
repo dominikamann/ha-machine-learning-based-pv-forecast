@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import issue_registry as ir
@@ -42,3 +43,11 @@ async def test_open_meteo_down_later_keeps_forecast_and_raises_issue(
     coordinator._weather_failing_since -= timedelta(hours=4)
     await coordinator.async_refresh()
     assert ir.async_get(hass).async_get_issue(DOMAIN, "open_meteo_unreachable") is not None
+
+
+async def test_no_training_starts_while_setup_is_retrying(recorder_mock, hass, open_meteo):
+    open_meteo.forecast.side_effect = fail
+    with patch("custom_components.ml_pv_forecast.coordinator.MlPvCoordinator.async_train") as train:
+        entry = await setup_plant(hass, open_meteo)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    train.assert_not_called()

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_change
@@ -38,6 +38,7 @@ WEATHER_REPAIR_AFTER = timedelta(hours=3)
 EVALUATION_DAYS = 30
 CORRECTION_DAYS = 365
 RETENTION = timedelta(days=730)
+SHORT_RETENTION_DAYS = CORRECTION_DAYS + 35  # short-horizon rows are the bulk of the archive
 MORNING_HOUR = 5
 LIVE_WINDOW = 2700
 
@@ -116,18 +117,30 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             if curve is not None:
                 self.morning[key] = curve
                 self._morning_day = today
+
+    @callback
+    def async_start(self) -> None:
+        """Start training, evaluation and the schedules once the first refresh succeeded."""
         self._unsubscribe = [
-            async_track_time_change(self.hass, self._async_nightly, hour=2, minute=30, second=0),
-            async_track_time_change(self.hass, self._async_weekly, hour=3, minute=0, second=0),
+            async_track_time_change(self.hass, self._nightly, hour=2, minute=30, second=0),
+            async_track_time_change(self.hass, self._weekly, hour=3, minute=0, second=0),
         ]
         for plant in self.plants.values():
             if plant.model is None:
-                self.config_entry.async_create_background_task(
-                    self.hass, self.async_train(plant.plant_id), f"{DOMAIN}_train_{plant.plant_id}"
-                )
-        self.config_entry.async_create_background_task(
-            self.hass, self.async_evaluate(dt_util.utcnow()), f"{DOMAIN}_evaluate"
-        )
+                self._background(self.async_train(plant.plant_id), f"train_{plant.plant_id}")
+        self._background(self.async_evaluate(dt_util.utcnow()), "evaluate")
+
+    def _background(self, coro, name: str) -> None:
+        # Tracked by the entry, so HA cancels it on unload before the archive is closed.
+        self.config_entry.async_create_background_task(self.hass, coro, f"{DOMAIN}_{name}")
+
+    @callback
+    def _nightly(self, now: datetime) -> None:
+        self._background(self._async_nightly(now), "nightly")
+
+    @callback
+    def _weekly(self, now: datetime) -> None:
+        self._background(self._async_weekly(now), "weekly")
 
     async def async_unload(self) -> None:
         for unsubscribe in self._unsubscribe:
@@ -399,7 +412,10 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 plant.tau = await self.hass.async_add_executor_job(tau_from_rows, rows)
         cutoff = now - RETENTION
         await self.hass.async_add_executor_job(
-            self.archive.prune, int(cutoff.timestamp()), dt_util.as_local(cutoff).date().isoformat()
+            self.archive.prune,
+            int(cutoff.timestamp()),
+            dt_util.as_local(cutoff).date().isoformat(),
+            now_ts - SHORT_RETENTION_DAYS * 86400,
         )
         self.async_update_listeners()
 

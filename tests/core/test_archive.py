@@ -59,3 +59,36 @@ def test_outdated_schema_is_replaced(tmp_path):
     assert ar.recovered
     ar.add_forecasts([fc(0, 3600, 1.0)])
     ar.close()
+
+
+def test_closed_archive_ignores_late_calls(tmp_path):
+    ar = Archive(tmp_path / "a.db")
+    ar.close()
+    ar.add_forecasts([fc(0, 3600, 1.0)])
+    ar.add_actuals("a", np.arange(0, 3600, 900), np.ones(4))
+    ar.prune(0, "2000-01-01")
+    assert ar.evaluated("a", None, 0, 10**9) == []
+    assert ar.load_curve("a", "2026-10-12") is None
+
+
+def test_short_horizons_can_be_pruned_earlier(tmp_path):
+    ar = Archive(tmp_path / "a.db")
+    ar.add_forecasts([fc(0, 3600, 1.0, horizon="1h"), fc(0, 3600, 1.0, horizon="day_ahead")])
+    ar.add_actuals("a", np.arange(0, 3600, 900), np.ones(4))
+    ar.prune(0, "2000-01-01", short_before=10**6)
+    assert [r.forecast.horizon for r in ar.evaluated("a", None, 0, 10**9)] == ["day_ahead"]
+    ar.close()
+
+
+def test_evaluating_a_year_of_rows_is_fast(tmp_path):
+    import time
+
+    ar = Archive(tmp_path / "a.db")
+    n = 35040  # one year of quarter-hour issuances
+    ar.add_forecasts([fc(900 * i, 900 * i + 3600, 1.0, issued=900 * i) for i in range(n)])
+    ar.add_actuals("a", np.arange(0, 900 * (n + 4), 900), np.ones(n + 4))
+    t0 = time.perf_counter()
+    rows = ar.evaluated("a", None, 0, 10**9)
+    assert len(rows) == n
+    assert time.perf_counter() - t0 < 1.0
+    ar.close()

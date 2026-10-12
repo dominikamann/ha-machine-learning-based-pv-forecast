@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS forecasts (
 CREATE TABLE IF NOT EXISTS actuals (
     plant TEXT NOT NULL, start INTEGER NOT NULL, wh REAL NOT NULL, PRIMARY KEY (plant, start)
 );
+CREATE INDEX IF NOT EXISTS forecasts_plant_start ON forecasts (plant, start);
 CREATE TABLE IF NOT EXISTS curves (
     plant TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (plant, day)
 );
@@ -71,6 +72,7 @@ class Archive:
         self._path = path
         self._lock = threading.RLock()
         self.recovered = False
+        self._closed = False
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._db = self._open()
@@ -92,22 +94,28 @@ class Archive:
         return db
 
     def add_forecasts(self, rows: list[ArchivedForecast]) -> None:
-        with self._lock, self._db:
-            self._db.executemany(
-                "INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [astuple(r) for r in rows if _finite(r)],
-            )
+        with self._lock:
+            if self._closed:
+                return
+            with self._db:
+                self._db.executemany(
+                    "INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [astuple(r) for r in rows if _finite(r)],
+                )
 
     def add_actuals(self, plant: str, times: np.ndarray, wh: np.ndarray) -> None:
-        with self._lock, self._db:
-            self._db.executemany(
-                "INSERT OR REPLACE INTO actuals VALUES (?,?,?)",
-                [
-                    (plant, int(t), float(v))
-                    for t, v in zip(times, wh, strict=True)
-                    if np.isfinite(v)
-                ],
-            )
+        with self._lock:
+            if self._closed:
+                return
+            with self._db:
+                self._db.executemany(
+                    "INSERT OR REPLACE INTO actuals VALUES (?,?,?)",
+                    [
+                        (plant, int(t), float(v))
+                        for t, v in zip(times, wh, strict=True)
+                        if np.isfinite(v)
+                    ],
+                )
 
     def _actual_sum(self, plant: str, start: int, end: int) -> float | None:
         count, total = self._db.execute(
@@ -124,6 +132,8 @@ class Archive:
             query += " AND horizon=?"
             args = (*args, horizon)
         with self._lock:
+            if self._closed:
+                return []
             out = []
             for raw in self._db.execute(query + " ORDER BY start", args).fetchall():
                 f = ArchivedForecast(*raw)
@@ -135,24 +145,40 @@ class Archive:
             return out
 
     def save_curve(self, plant: str, day: str, data: list) -> None:
-        with self._lock, self._db:
-            self._db.execute(
-                "INSERT OR REPLACE INTO curves VALUES (?,?,?)", (plant, day, json.dumps(data))
-            )
+        with self._lock:
+            if self._closed:
+                return
+            with self._db:
+                self._db.execute(
+                    "INSERT OR REPLACE INTO curves VALUES (?,?,?)", (plant, day, json.dumps(data))
+                )
 
     def load_curve(self, plant: str, day: str) -> list | None:
         with self._lock:
+            if self._closed:
+                return None
             row = self._db.execute(
                 "SELECT data FROM curves WHERE plant=? AND day=?", (plant, day)
             ).fetchone()
         return json.loads(row[0]) if row else None
 
-    def prune(self, before: int, before_day: str) -> None:
-        with self._lock, self._db:
-            self._db.execute("DELETE FROM forecasts WHERE end < ?", (before,))
-            self._db.execute("DELETE FROM actuals WHERE start < ?", (before,))
-            self._db.execute("DELETE FROM curves WHERE day < ?", (before_day,))
+    def prune(self, before: int, before_day: str, short_before: int | None = None) -> None:
+        """Drop old rows; short-horizon forecasts (the bulk) can be dropped earlier."""
+        with self._lock:
+            if self._closed:
+                return
+            with self._db:
+                self._db.execute("DELETE FROM forecasts WHERE end < ?", (before,))
+                if short_before is not None:
+                    self._db.execute(
+                        "DELETE FROM forecasts WHERE horizon IN ('30m', '1h', '6h') AND end < ?",
+                        (short_before,),
+                    )
+                self._db.execute("DELETE FROM actuals WHERE start < ?", (before,))
+                self._db.execute("DELETE FROM curves WHERE day < ?", (before_day,))
 
     def close(self) -> None:
         with self._lock:
-            self._db.close()
+            if not self._closed:
+                self._closed = True
+                self._db.close()

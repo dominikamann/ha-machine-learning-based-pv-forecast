@@ -22,6 +22,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MlPvConfigEntry) -> bool
         await coordinator.async_unload()  # the archive was opened in _async_setup
         raise
     entry.runtime_data = coordinator
+    coordinator.async_start()
     async_register_view(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload))

@@ -92,3 +92,12 @@ def test_evaluating_a_year_of_rows_is_fast(tmp_path):
     assert len(rows) == n
     assert time.perf_counter() - t0 < 1.0
     ar.close()
+
+
+def test_actuals_between(tmp_path):
+    ar = Archive(tmp_path / "a.db")
+    ar.add_actuals("a", np.array([900, 0, 1800]), np.array([2.0, 1.0, 3.0]))
+    times, wh = ar.actuals("a", 0, 1800)
+    assert times.tolist() == [0, 900] and wh.tolist() == [1.0, 2.0]
+    ar.close()
+    assert ar.actuals("a", 0, 1800)[0].tolist() == []

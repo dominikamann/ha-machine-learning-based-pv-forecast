@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
+import numpy as np
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
@@ -155,7 +156,7 @@ class PeakSensor(ForecastEntity):
 class CurveSensor(ForecastEntity):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _unrecorded_attributes = frozenset({"hourly", "quarters", "morning"})
+    _unrecorded_attributes = frozenset({"hourly", "quarters", "morning", "actual", "daily"})
 
     def __init__(self, coordinator, plant_id) -> None:
         super().__init__(coordinator, plant_id, "curve")
@@ -177,7 +178,6 @@ class CurveSensor(ForecastEntity):
         if not fc:
             return None
         w = Windows.current()
-        hour_start = w.now - w.now % 3600
 
         def rows(times, values, start, end, scale):
             return [
@@ -192,8 +192,25 @@ class CurveSensor(ForecastEntity):
             ]
 
         morning = self.coordinator.morning.get(self._plant_id, [])
+        actual_times, actual_wh = self.coordinator.actual_today.get(
+            self._plant_id, (np.array([]), np.array([]))
+        )
+
+        def kwh(start: int, end: int) -> float:
+            return round(float(fc.energy(start, end)[1]) / 1000, 2)
+
         return {
-            "hourly": rows(fc.hour_times, fc.hourly, hour_start, hour_start + 72 * 3600, 1.0),
+            "daily": {
+                "today": kwh(w.today, w.tomorrow),
+                "tomorrow": kwh(w.tomorrow, w.day_after),
+                "day_after_tomorrow": kwh(w.day_after, w.day_after_end),
+            },
+            "actual": [
+                {"time": _iso(t), "w": round(float(v) * 4, 1)}
+                for t, v in zip(actual_times, actual_wh, strict=True)
+                if w.today <= t < w.tomorrow
+            ],
+            "hourly": rows(fc.hour_times, fc.hourly, w.today, w.day_after_end, 1.0),
             "quarters": rows(fc.quarter_times, fc.quarter, w.today, w.now + 86400, 4.0),
             "morning": [
                 {

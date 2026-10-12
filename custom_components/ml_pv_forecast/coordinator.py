@@ -94,6 +94,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             )
         self.metrics: dict[str, dict[str, Metrics]] = {}
         self.morning: dict[str, list] = {}
+        self.actual_today: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self.weather_fetched_at: datetime | None = None
         self._weather: tuple[WeatherData, WeatherData] | None = None
         self._weather_failing_since: datetime | None = None
@@ -115,7 +116,11 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 plant.model = model
                 plant.status = "ready" if model.kind == "gbm" else "learning"
                 plant.last_trained = model.trained_at
+        midnight = int(dt_util.start_of_local_day().timestamp())
         for key in [*self.plants, TOTAL]:
+            self.actual_today[key] = await self.hass.async_add_executor_job(
+                self.archive.actuals, key, midnight, midnight + 2 * 86400
+            )
             curve = await self.hass.async_add_executor_job(self.archive.load_curve, key, today)
             if curve is not None:
                 self.morning[key] = curve
@@ -272,8 +277,9 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         forecasts[TOTAL] = total_forecast(list(forecasts.values()), now_ts)
         actuals[TOTAL] = _sum_actuals(list(actuals.values()))
         daily = self._daily_windows(now)
+        midnight = int(dt_util.start_of_local_day().timestamp())
         await self.hass.async_add_executor_job(
-            self._archive_cycle, forecasts, actuals, now_ts, daily
+            self._archive_cycle, forecasts, actuals, now_ts, daily, midnight
         )
         if daily is not None:
             self._morning_day = daily[3]
@@ -313,6 +319,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         actuals: dict[str, tuple[np.ndarray, np.ndarray]],
         now: int,
         daily: tuple[int, int, int, str] | None,
+        midnight: int,
     ) -> None:
         hourly = self._weather[0]
         start = now - now % 900 + (900 if now % 900 else 0)
@@ -352,6 +359,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         self.archive.add_forecasts(rows)
         for key, (times, wh) in actuals.items():
             self.archive.add_actuals(key, times, wh)
+        for key in forecasts:
+            self.actual_today[key] = self.archive.actuals(key, midnight, now + 900)
 
     # ---- training and evaluation -----------------------------------------------------------
 

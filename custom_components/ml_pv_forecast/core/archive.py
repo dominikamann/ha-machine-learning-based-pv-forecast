@@ -144,6 +144,18 @@ class Archive:
                 out.append(EvalRow(f, actual, self._actual_sum(plant, f.start - length, f.start)))
             return out
 
+    def actuals(self, plant: str, since: int, until: int) -> tuple[np.ndarray, np.ndarray]:
+        """15-minute actuals (Wh) with start in [since, until)."""
+        with self._lock:
+            if self._closed:
+                return np.array([], dtype=np.int64), np.array([])
+            rows = self._db.execute(
+                "SELECT start, wh FROM actuals"
+                " WHERE plant=? AND start>=? AND start<? ORDER BY start",
+                (plant, since, until),
+            ).fetchall()
+        return np.array([r[0] for r in rows], dtype=np.int64), np.array([r[1] for r in rows])
+
     def save_curve(self, plant: str, day: str, data: list) -> None:
         with self._lock:
             if self._closed:

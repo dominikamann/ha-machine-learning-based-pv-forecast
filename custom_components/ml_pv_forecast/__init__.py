@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 
 from .coordinator import MlPvCoordinator
 from .evcc import async_register_view
+from .frontend import async_register_card
 
 PLATFORMS = [Platform.SENSOR]
 
@@ -26,6 +27,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MlPvConfigEntry) -> bool
     entry.runtime_data = coordinator
     coordinator.async_start()
     async_register_view(hass)
+    await async_register_card(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

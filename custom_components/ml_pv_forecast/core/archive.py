@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS forecasts (
     plant TEXT NOT NULL, horizon TEXT NOT NULL, issued_at INTEGER NOT NULL,
     start INTEGER NOT NULL, end INTEGER NOT NULL,
     p10 REAL NOT NULL, p50 REAL NOT NULL, p90 REAL NOT NULL,
-    raw_p50 REAL NOT NULL, model_p50 REAL NOT NULL, ratio REAL, cloud REAL NOT NULL, capacity REAL NOT NULL,
+    raw_p50 REAL NOT NULL, model_p50 REAL NOT NULL, ratio REAL,
+    cloud REAL NOT NULL, capacity REAL NOT NULL,
     PRIMARY KEY (plant, horizon, issued_at)
 );
 CREATE TABLE IF NOT EXISTS actuals (

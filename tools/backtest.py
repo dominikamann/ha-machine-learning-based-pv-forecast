@@ -1,7 +1,7 @@
 """Backtest the forecast model on a running Home Assistant.
 
 Trains on everything before the last 12 months and reports the daily-energy error of the model
-and of the physics baseline over those 12 months.
+and of the physics baseline over those 12 months, for the same-day and the day-ahead forecast.
 
     uv run python tools/backtest.py --url http://homeassistant.local:8123 \
         --token "$HA_TOKEN" --entity sensor.solaredge_ac_power
@@ -98,25 +98,27 @@ async def main() -> None:
         raise SystemExit("no statistics found")
     lat, lon = config["latitude"], config["longitude"]
     async with aiohttp.ClientSession() as session:
-        weather = await OpenMeteoClient(session, lat, lon).history(
+        leads = await OpenMeteoClient(session, lat, lon).history_leads(
             datetime.fromtimestamp(int(times[0]), UTC).date(),
             (end - timedelta(days=1)).date(),
             date.today(),
         )
     cutoff = int((end - timedelta(days=365)).timestamp())
     train_mask = times < cutoff
-    result = train_plant(
-        times[train_mask], wh[train_mask], weather, lat, lon, cutoff, None, None, ""
-    )
+    result = train_plant(times[train_mask], wh[train_mask], leads, lat, lon, cutoff, None, None, "")
 
-    common, pi, wi = np.intersect1d(times, weather.times, return_indices=True)
-    X = build_features(weather.take(wi), lat, lon)
-    test = common >= cutoff
-    baseline = fit_fallback(X[~test], wh[pi][~test], result.model.capacity, cutoff)
-    model_err = daily_errors(common[test], wh[pi][test], result.model.predict(X[test])[:, 1])
-    base_err = daily_errors(common[test], wh[pi][test], baseline.predict(X[test])[:, 1])
-    print(f"model ({result.model.kind}): MAE {model_err[0]} kWh/day, nMAE {model_err[1]} %")
-    print(f"physics baseline:   MAE {base_err[0]} kWh/day, nMAE {base_err[1]} %")
+    for lead, weather in zip(("today", "tomorrow"), leads[:2], strict=False):
+        common, pi, wi = np.intersect1d(times, weather.times, return_indices=True)
+        rows = weather.take(wi)
+        has_weather = np.isfinite(rows.ghi)
+        X = build_features(rows.take(has_weather), lat, lon)
+        t, y = common[has_weather], wh[pi][has_weather]
+        test = t >= cutoff
+        baseline = fit_fallback(X[~test], y[~test], result.model.capacity, cutoff)
+        model_err = daily_errors(t[test], y[test], result.model.predict(X[test])[:, 1])
+        base_err = daily_errors(t[test], y[test], baseline.predict(X[test])[:, 1])
+        print(f"{lead:8s} model:            MAE {model_err[0]} kWh/day, nMAE {model_err[1]} %")
+        print(f"{lead:8s} physics baseline: MAE {base_err[0]} kWh/day, nMAE {base_err[1]} %")
 
 
 if __name__ == "__main__":

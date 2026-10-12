@@ -91,3 +91,13 @@ def test_fresh_refit_replaces_older_model_after_a_change():
     active = train(times[before], X[before], y[before], now - 7 * 86400).model
     result = train(times, X, y, now, active=active)
     assert result.promoted and result.model is not active
+
+
+def test_models_from_older_feature_sets_are_not_current():
+    from custom_components.ml_pv_forecast.core.model import is_current
+
+    times, X, y = data(10)
+    m = fit_fallback(X, y, float(y.max()), 0)
+    assert is_current(m)
+    m.feature_version = 1
+    assert not is_current(m)

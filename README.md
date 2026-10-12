@@ -34,6 +34,13 @@ datasheet says it should do.
 - **Weather**: Open-Meteo's archive of past forecasts (from 2022; ERA5 reanalysis before that,
   weighted lower) for training, the current forecast for predictions. Training on past *forecasts*
   means the model learns from the same kind of input it gets later.
+- **Several weather models**: besides Open-Meteo's best match, the forecasts of DWD ICON,
+  Météo-France, ECMWF and NOAA GFS are model inputs, together with their mean and spread. When the
+  models disagree, the P10–P90 band widens.
+- **Trained per lead time**: every past hour is learned three times – with the forecast from the
+  same day, from the day before and from two days before (Open-Meteo's archive of previous model
+  runs, from 2024). Tomorrow's forecast is therefore trained on what forecasts for tomorrow really
+  looked like, not on same-day forecasts.
 - **No geometry**: internally the irradiance on seven fixed virtual planes (flat, 30° east to west,
   60° south) is computed. They are model inputs, identical for every installation; the model learns
   which mix fits your plant.
@@ -46,6 +53,9 @@ datasheet says it should do.
   retraining with a promotion gate.
 
 Open-Meteo's free API is for non-commercial use, which covers a private home. No API key is needed.
+The first training downloads several years of weather for five models; if Open-Meteo's per-minute
+limit is reached, the integration waits a minute and continues (a few minutes in total, cached
+afterwards).
 
 ## Installation
 
@@ -145,8 +155,16 @@ It trains on everything except the last 12 months and reports the daily error of
 a physics baseline over those 12 months. The model is trained once and not updated during those
 12 months, so live results with weekly retraining and the correction layer tend to be better.
 
-On two real plants the daily error over 12 months was 8.9 % and 11.0 %, against 11.2 % and
-14.1 % for the physics baseline (days on which a plant was switched off excluded).
+On two real plants the daily error over 12 months (days on which a plant was switched off
+excluded) was:
+
+| | Today | Tomorrow |
+|---|---|---|
+| Plant 1 | 9.3 % | 11.7 % |
+| Plant 2 | 11.4 % | 13.6 % |
+
+Before version 0.2.0 (one weather model, trained on same-day forecasts only) tomorrow's error was
+20.8 % and 24.8 %.
 
 ## Troubleshooting
 

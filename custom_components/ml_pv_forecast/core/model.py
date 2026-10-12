@@ -11,7 +11,7 @@ import numpy as np
 from scipy.optimize import nnls
 
 from .cleaning import effective_capacity, usable_mask
-from .features import PLANE_COLUMNS, col
+from .features import FEATURE_VERSION, PLANE_COLUMNS, col
 from .gbm import GradientBoosting
 
 QUANTILES = (0.1, 0.5, 0.9)
@@ -40,6 +40,7 @@ class PlantModel:
     coef: np.ndarray | None = None
     spread: tuple[float, float] = (0.6, 1.3)
     estimators: dict[float, Any] = field(default_factory=dict)
+    feature_version: int = FEATURE_VERSION
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """P10, P50, P90 per row."""
@@ -155,6 +156,11 @@ def train(
     else:
         final, promoted = fit_fallback(Xu, yu, capacity, now), True
     return TrainResult(final, promoted, len(t), candidate_mae, baseline_mae, "ready")
+
+
+def is_current(model: PlantModel) -> bool:
+    """False for models trained on an older feature set (pickles from before have no field)."""
+    return getattr(model, "feature_version", 1) == FEATURE_VERSION
 
 
 def save_model(model: PlantModel, path: Path) -> None:

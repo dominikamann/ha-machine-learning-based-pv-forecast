@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import reduce
 
 import numpy as np
@@ -91,10 +91,26 @@ def window_cloud(weather: WeatherData, start: int, end: int) -> float:
     return float(np.mean(cloud_total(weather)[mask])) if mask.any() else 0.0
 
 
-def train_plant(
+def _training_rows(
     prod_times: np.ndarray,
     prod_wh: np.ndarray,
     weather: WeatherData,
+    latitude: float,
+    longitude: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    common, prod_index, weather_index = np.intersect1d(
+        prod_times, weather.times, return_indices=True
+    )
+    rows = weather.take(weather_index)
+    has_weather = np.isfinite(rows.ghi)  # e.g. before a model archive starts
+    X = build_features(rows.take(has_weather), latitude, longitude)
+    return common[has_weather], X, prod_wh[prod_index][has_weather]
+
+
+def train_plant(
+    prod_times: np.ndarray,
+    prod_wh: np.ndarray,
+    weather: WeatherData | list[WeatherData],
     latitude: float,
     longitude: float,
     now: int,
@@ -102,13 +118,21 @@ def train_plant(
     limit_w: float | None,
     config_hash: str,
 ) -> TrainResult:
-    common, prod_index, weather_index = np.intersect1d(
-        prod_times, weather.times, return_indices=True
-    )
-    X = build_features(weather.take(weather_index), latitude, longitude)
-    result = train(common, X, prod_wh[prod_index], now, active, limit_w)
+    """Train on every hour once per forecast lead (same-day, day ahead, ...)."""
+    weathers = weather if isinstance(weather, list) else [weather]
+    parts = [_training_rows(prod_times, prod_wh, w, latitude, longitude) for w in weathers]
+    times = np.concatenate([p[0] for p in parts])
+    X = np.concatenate([p[1] for p in parts])
+    y = np.concatenate([p[2] for p in parts])
+    result = train(times, X, y, now, active, limit_w)
     result.model.config_hash = config_hash
     return result
+
+
+def with_lead(weather: WeatherData, now: int) -> WeatherData:
+    """Lead in days as used in training: 0 up to 24 h ahead, 1 up to 48 h, then 2."""
+    lead = np.clip(np.floor((weather.times - now) / DAY), 0, 2)
+    return replace(weather, lead_days=lead.astype(float))
 
 
 def forecast_plant(
@@ -124,7 +148,7 @@ def forecast_plant(
     tau: float = DEFAULT_TAU,
 ) -> PlantForecast:
     times = weather_hourly.times
-    hourly = model.predict(build_features(weather_hourly, latitude, longitude))
+    hourly = model.predict(build_features(with_lead(weather_hourly, now), latitude, longitude))
     quarter_model = to_quarters(times, hourly, weather_quarter.times, weather_quarter.ghi)
     if correction is not None:
         factors = correction.factors(

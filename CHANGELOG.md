@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 – 2026-10-12
+
+- Forecasts use five weather models (best match, DWD ICON, Météo-France, ECMWF, NOAA GFS) with
+  their mean and spread as inputs.
+- Training per lead time with Open-Meteo's previous model runs: tomorrow's daily error on two real
+  plants dropped from 20.8 % / 24.8 % to 11.7 % / 13.6 %.
+- Models from older versions are retrained automatically after the update.
+- Waits and retries when Open-Meteo's per-minute request limit is reached.
+- No repair issue for sensors that appear shortly after Home Assistant started; forecasts refresh
+  as soon as Home Assistant has started.
+- Backtest reports same-day and day-ahead errors.
+
 ## 0.1.2 – 2026-10-12
 
 - Fix: a plant added while the integration was still starting up was ignored until the next

@@ -80,3 +80,32 @@ def test_model_energy_is_before_correction_and_nowcast():
     assert fc.raw_energy(now, end)[1] == pytest.approx(0.5 * fc.model_energy(now, end)[1])
     total = total_forecast([fc, fc], now)
     assert total.model_energy(now, end)[1] == pytest.approx(2 * fc.model_energy(now, end)[1])
+
+
+def test_with_lead_assigns_days_ahead():
+    from custom_components.ml_pv_forecast.core.pipeline import with_lead
+
+    w = synthetic_weather(START_2024, 120)
+    now = int(w.times[10])
+    leads = with_lead(w, now).lead_days
+    assert leads[0] == 0 and leads[10] == 0
+    assert leads[10 + 30] == 1 and leads[10 + 60] == 2 and leads[10 + 100] == 2
+
+
+def test_training_stacks_leads_and_skips_rows_without_weather():
+    from dataclasses import replace
+
+    from custom_components.ml_pv_forecast.core.features import FEATURE_VERSION
+    from custom_components.ml_pv_forecast.core.model import is_current
+
+    w0 = synthetic_weather(START_2024, 20 * 24)
+    w1 = replace(
+        w0, lead_days=np.ones(len(w0)), ghi=np.where(np.arange(len(w0)) < 48, np.nan, w0.ghi)
+    )
+    y = synthetic_production(w0)
+    now = int(w0.times[-1]) + 3600
+    single = train_plant(w0.times, y, w0, LAT, LON, now, None, None, "h")
+    stacked = train_plant(w0.times, y, [w0, w1], LAT, LON, now, None, None, "h")
+    assert stacked.rows > single.rows
+    assert stacked.rows < 2 * single.rows  # rows without lead-1 weather were skipped
+    assert stacked.model.feature_version == FEATURE_VERSION and is_current(stacked.model)

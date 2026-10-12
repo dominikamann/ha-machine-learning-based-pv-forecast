@@ -19,8 +19,14 @@ QUARTER = 900
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 HISTORICAL_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+PREVIOUS_RUNS_URL = "https://previous-runs-api.open-meteo.com/v1/forecast"
 HISTORICAL_START = date(2022, 1, 1)
+PREVIOUS_RUNS_START = date(2024, 1, 1)
 CHUNK_DAYS = 90
+LEADS = (0, 1, 2)
+CACHE_VERSION = 2
+RATE_LIMIT_RETRIES = 5
+RATE_LIMIT_WAIT = 61  # seconds; Open-Meteo's limit window is one minute
 
 VARIABLES = {
     "shortwave_radiation": "ghi",
@@ -34,9 +40,24 @@ VARIABLES = {
 }
 QUARTER_VARIABLES = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation")
 
+# Several weather models give the model a second opinion and a measure of agreement.
+ENSEMBLE_MODELS = ("icon_seamless", "meteofrance_seamless", "ecmwf_ifs025", "gfs_seamless")
+ENSEMBLE_VARIABLES = {
+    "shortwave_radiation": "ens_ghi",
+    "direct_normal_irradiance": "ens_dni",
+    "diffuse_radiation": "ens_dhi",
+    "cloud_cover": "ens_cloud",
+}
+REQUEST_MODELS = ("best_match", *ENSEMBLE_MODELS)
+HOURLY_REQUEST = [*VARIABLES, *(v for v in ENSEMBLE_VARIABLES if v not in VARIABLES)]
+
 
 class OpenMeteoError(Exception):
     """Open-Meteo could not deliver data."""
+
+
+class _RateLimited(Exception):
+    """HTTP 429 from Open-Meteo; retried after a pause."""
 
 
 @dataclass(frozen=True)
@@ -54,6 +75,19 @@ class WeatherData:
     cloud_high: np.ndarray
     snow_depth: np.ndarray
     is_reanalysis: np.ndarray
+    ens_ghi: np.ndarray | None = None  # (n, len(ENSEMBLE_MODELS)), NaN where a model is missing
+    ens_dni: np.ndarray | None = None
+    ens_dhi: np.ndarray | None = None
+    ens_cloud: np.ndarray | None = None
+    lead_days: np.ndarray | None = None  # 0 = same-day forecast, 1 = issued a day ahead, ...
+
+    def __post_init__(self) -> None:
+        n = len(self.times)
+        for name in ENSEMBLE_VARIABLES.values():
+            if getattr(self, name) is None:
+                object.__setattr__(self, name, np.full((n, len(ENSEMBLE_MODELS)), np.nan))
+        if self.lead_days is None:
+            object.__setattr__(self, "lead_days", np.zeros(n))
 
     def __len__(self) -> int:
         return len(self.times)
@@ -91,26 +125,47 @@ def cloud_total(weather: WeatherData) -> np.ndarray:
     ) / 3
 
 
+def _values(raw: list | None, n: int) -> np.ndarray:
+    if raw is None:
+        return np.full(n, np.nan)
+    return np.array([np.nan if v is None else v for v in raw], dtype=float)
+
+
 def parse_block(
-    payload: dict[str, Any], block: str, interval: int, is_reanalysis: bool
+    payload: dict[str, Any],
+    block: str,
+    interval: int,
+    is_reanalysis: bool,
+    suffix: str | None = None,
+    lead: int = 0,
 ) -> WeatherData:
-    """Parse one Open-Meteo time block."""
+    """Parse one Open-Meteo time block.
+
+    With ``suffix`` set the response comes from a multi-model request (``models=REQUEST_MODELS``):
+    keys look like ``shortwave_radiation{suffix}_icon_seamless``; base values use ``best_match``.
+    """
     data = payload.get(block)
     if not data or "time" not in data:
         raise OpenMeteoError(f"response has no {block} data")
     # Open-Meteo labels radiation with the end of the interval it averages; we key by start.
     times = np.asarray(data["time"], dtype=np.int64) - interval
     n = len(times)
-    columns = {}
-    for api_name, name in VARIABLES.items():
-        raw = data.get(api_name)
-        columns[name] = (
-            np.full(n, np.nan)
-            if raw is None
-            else np.array([np.nan if v is None else v for v in raw], dtype=float)
-        )
+    multi = suffix is not None
+    columns = {
+        name: _values(data.get(f"{api}{suffix}_best_match" if multi else api), n)
+        for api, name in VARIABLES.items()
+    }
+    if multi:
+        for api, name in ENSEMBLE_VARIABLES.items():
+            columns[name] = np.column_stack(
+                [_values(data.get(f"{api}{suffix}_{model}"), n) for model in ENSEMBLE_MODELS]
+            )
     return WeatherData(
-        times=times, interval=interval, is_reanalysis=np.full(n, float(is_reanalysis)), **columns
+        times=times,
+        interval=interval,
+        is_reanalysis=np.full(n, float(is_reanalysis)),
+        lead_days=np.full(n, float(lead)),
+        **columns,
     )
 
 
@@ -139,6 +194,17 @@ class OpenMeteoClient:
         }
 
     async def _get(self, url: str, params: dict[str, str]) -> dict[str, Any]:
+        """GET with retries when Open-Meteo's per-minute limit is hit (large history downloads)."""
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            try:
+                return await self._get_once(url, params)
+            except _RateLimited as err:
+                if attempt == RATE_LIMIT_RETRIES:
+                    raise OpenMeteoError(str(err)) from err
+                await asyncio.sleep(RATE_LIMIT_WAIT)
+        raise AssertionError("unreachable")
+
+    async def _get_once(self, url: str, params: dict[str, str]) -> dict[str, Any]:
         try:
             async with self._session.get(
                 url, params=params, timeout=aiohttp.ClientTimeout(total=60)
@@ -146,26 +212,78 @@ class OpenMeteoClient:
                 payload = await resp.json(content_type=None)
                 if resp.status != 200 or payload.get("error"):
                     reason = payload.get("reason", "") if isinstance(payload, dict) else ""
-                    raise OpenMeteoError(f"{url}: HTTP {resp.status} {reason}".strip())
+                    message = f"{url}: HTTP {resp.status} {reason}".strip()
+                    if resp.status == 429:
+                        raise _RateLimited(message)
+                    raise OpenMeteoError(message)
                 return payload
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise OpenMeteoError(f"{url}: {err}") from err
 
     async def forecast(self) -> tuple[WeatherData, WeatherData]:
-        """Hourly and 15-minute forecast from yesterday to three days ahead."""
-        payload = await self._get(
+        """Hourly (all models) and 15-minute forecast from yesterday to three days ahead."""
+        hourly = await self._get(
             FORECAST_URL,
             self._params(
-                hourly=",".join(VARIABLES),
-                minutely_15=",".join(QUARTER_VARIABLES),
+                hourly=",".join(HOURLY_REQUEST),
+                models=",".join(REQUEST_MODELS),
                 past_days="1",
                 forecast_days="4",
             ),
         )
-        return (
-            parse_block(payload, "hourly", HOUR, False),
-            parse_block(payload, "minutely_15", QUARTER, False),
+        quarter = await self._get(
+            FORECAST_URL,
+            self._params(minutely_15=",".join(QUARTER_VARIABLES), past_days="1", forecast_days="4"),
         )
+        return (
+            parse_block(hourly, "hourly", HOUR, False, suffix=""),
+            parse_block(quarter, "minutely_15", QUARTER, False),
+        )
+
+    async def history_leads(self, start: date, end: date, today: date) -> list[WeatherData]:
+        """Training weather per forecast lead: same-day (from 2022), one and two days ahead."""
+        leads = [await self.history(start, end, today)]
+        first = max(start, PREVIOUS_RUNS_START)
+        for lead in LEADS[1:]:
+            if first > end:
+                break
+            parts = [
+                await self._previous_runs_chunk(chunk_start, chunk_end, lead, today)
+                for chunk_start, chunk_end, _ in _chunks(first, end)
+            ]
+            leads.append(WeatherData.concat(parts))
+        return leads
+
+    async def _previous_runs_chunk(
+        self, start: date, end: date, lead: int, today: date
+    ) -> WeatherData:
+        suffix = f"_previous_day{lead}"
+        payload = await self._cached(
+            f"prev{lead}",
+            start,
+            end,
+            today,
+            PREVIOUS_RUNS_URL,
+            hourly=",".join(f"{v}{suffix}" for v in HOURLY_REQUEST),
+            models=",".join(REQUEST_MODELS),
+        )
+        return parse_block(payload, "hourly", HOUR, False, suffix=suffix, lead=lead)
+
+    async def _cached(
+        self, kind: str, start: date, end: date, today: date, url: str, **params: str
+    ) -> dict[str, Any]:
+        path = None
+        if self._cache_dir is not None and end < today - timedelta(days=7):
+            name = f"v{CACHE_VERSION}_{kind}_{self._lat:.2f}_{self._lon:.2f}_{start}_{end}.json"
+            path = self._cache_dir / name
+        payload = await asyncio.to_thread(_read_json, path) if path else None
+        if payload is None:
+            payload = await self._get(
+                url, self._params(start_date=start.isoformat(), end_date=end.isoformat(), **params)
+            )
+            if path:
+                await asyncio.to_thread(_write_json, path, payload)
+        return payload
 
     async def history(self, start: date, end: date, today: date) -> WeatherData:
         """Hourly archived forecasts (ERA5 reanalysis before 2022) for [start, end]."""
@@ -178,23 +296,21 @@ class OpenMeteoClient:
     async def _history_chunk(
         self, start: date, end: date, reanalysis: bool, today: date
     ) -> WeatherData:
-        path = None
-        if self._cache_dir is not None and end < today - timedelta(days=7):
-            kind = "era5" if reanalysis else "hist"
-            path = self._cache_dir / f"{kind}_{self._lat:.2f}_{self._lon:.2f}_{start}_{end}.json"
-        payload = await asyncio.to_thread(_read_json, path) if path else None
-        if payload is None:
-            payload = await self._get(
-                ARCHIVE_URL if reanalysis else HISTORICAL_URL,
-                self._params(
-                    hourly=",".join(VARIABLES),
-                    start_date=start.isoformat(),
-                    end_date=end.isoformat(),
-                ),
+        if reanalysis:  # ERA5 is a single reanalysis, no model choice
+            payload = await self._cached(
+                "era5", start, end, today, ARCHIVE_URL, hourly=",".join(VARIABLES)
             )
-            if path:
-                await asyncio.to_thread(_write_json, path, payload)
-        return parse_block(payload, "hourly", HOUR, reanalysis)
+            return parse_block(payload, "hourly", HOUR, True)
+        payload = await self._cached(
+            "hist",
+            start,
+            end,
+            today,
+            HISTORICAL_URL,
+            hourly=",".join(HOURLY_REQUEST),
+            models=",".join(REQUEST_MODELS),
+        )
+        return parse_block(payload, "hourly", HOUR, False, suffix="")
 
 
 def _chunks(start: date, end: date) -> Iterator[tuple[date, date, bool]]:

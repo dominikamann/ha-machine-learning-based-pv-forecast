@@ -23,7 +23,7 @@ from homeassistant.util import dt as dt_util
 from .const import CONF_ENTITIES, CONF_LIMIT_W, DOMAIN, SUBENTRY_PLANT, TOTAL
 from .core.archive import Archive, ArchivedForecast
 from .core.evaluation import Correction, Metrics, compute_metrics, tau_from_rows
-from .core.model import NotEnoughData, PlantModel, load_model, save_model
+from .core.model import NotEnoughData, PlantModel, is_current, load_model, save_model
 from .core.nowcast import DEFAULT_TAU, live_ratio
 from .core.pipeline import PlantForecast, forecast_plant, total_forecast, train_plant, window_cloud
 from .core.solar import sun_position
@@ -111,7 +111,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             model = await self.hass.async_add_executor_job(
                 load_model, self._model_path(plant.plant_id)
             )
-            if model is not None and model.config_hash == plant.config_hash:
+            if model is not None and model.config_hash == plant.config_hash and is_current(model):
                 plant.model = model
                 plant.status = "ready" if model.kind == "gbm" else "learning"
                 plant.last_trained = model.trained_at
@@ -368,7 +368,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                     raise NotEnoughData("no statistics yet")
                 first = dt_util.utc_from_timestamp(int(times[0])).date()
                 last = (now - timedelta(days=1)).date()
-                weather = await self.client.history(first, max(first, last), now.date())
+                weather = await self.client.history_leads(first, max(first, last), now.date())
                 result = await self.hass.async_add_executor_job(
                     train_plant,
                     times,

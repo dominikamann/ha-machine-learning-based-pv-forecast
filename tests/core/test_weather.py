@@ -112,3 +112,91 @@ async def test_http_error_raises():
     session = FakeSession(lambda url, params: (400, {"error": True, "reason": "bad"}))
     with pytest.raises(OpenMeteoError, match="bad"):
         await OpenMeteoClient(session, 50.0, 10.0).forecast()
+
+
+from custom_components.ml_pv_forecast.core.weather import (  # noqa: E402
+    ENSEMBLE_MODELS,
+    PREVIOUS_RUNS_URL,
+)
+
+ENS_VARS = ["shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "cloud_cover"]
+
+
+def multi_block(times, suffix="", base=1.0, ens=2.0):
+    data = {"time": times}
+    for v in VARS:
+        data[f"{v}{suffix}_best_match"] = [base] * len(times)
+    for m in ENSEMBLE_MODELS:
+        for v in ENS_VARS:
+            data[f"{v}{suffix}_{m}"] = [ens] * len(times)
+    return data
+
+
+def test_parse_multi_model_block_with_lead():
+    payload = {"hourly": multi_block([7200, 10800], suffix="_previous_day1")}
+    w = parse_block(payload, "hourly", HOUR, False, suffix="_previous_day1", lead=1)
+    assert w.ghi.tolist() == [1.0, 1.0]
+    assert w.ens_ghi.shape == (2, len(ENSEMBLE_MODELS)) and (w.ens_ghi == 2.0).all()
+    assert w.lead_days.tolist() == [1.0, 1.0]
+
+
+def test_weather_without_ensemble_gets_nan_columns_that_survive_take_and_concat():
+    w = parse_block({"hourly": block([3600, 7200])}, "hourly", HOUR, False)
+    assert w.ens_ghi.shape == (2, len(ENSEMBLE_MODELS)) and np.isnan(w.ens_ghi).all()
+    assert w.lead_days.tolist() == [0.0, 0.0]
+    both = WeatherData.concat([w, w.take(np.array([1]))])
+    assert both.ens_cloud.shape == (2, len(ENSEMBLE_MODELS))
+
+
+async def test_history_leads_fetch_previous_runs_from_2024(tmp_path):
+    def handler(url, params):
+        start = date.fromisoformat(params["start_date"])
+        t = int((start - date(1970, 1, 1)).days * 86400) + HOUR
+        hourly = params["hourly"].split(",")
+        suffix = (
+            "_previous_day" + hourly[0].split("_previous_day")[1]
+            if "_previous_day" in hourly[0]
+            else ""
+        )
+        return 200, {"hourly": multi_block([t], suffix=suffix)}
+
+    session = FakeSession(handler)
+    client = OpenMeteoClient(session, 50.0, 10.0, tmp_path)
+    leads = await client.history_leads(
+        date(2023, 12, 1), date(2024, 1, 10), today=date(2026, 10, 12)
+    )
+    assert [w.lead_days[0] for w in leads] == [0.0, 1.0, 2.0]
+    previous = [c for c in session.calls if c[0] == PREVIOUS_RUNS_URL]
+    assert {c[1]["start_date"] for c in previous} == {"2024-01-01"}
+    assert all("models" in c[1] for c in session.calls)
+    assert leads[1].ens_ghi[0, 0] == 2.0
+
+
+async def test_rate_limit_waits_and_retries(monkeypatch):
+    from custom_components.ml_pv_forecast.core import weather as weather_module
+
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
+    answers = iter([(429, {"error": True, "reason": "Minutely API request limit exceeded"})])
+
+    def handler(url, params):
+        return next(answers, (200, {"hourly": block([3600]), "minutely_15": block([900])}))
+
+    hourly, _ = await OpenMeteoClient(FakeSession(handler), 50.0, 10.0).forecast()
+    assert len(hourly) == 1 and waits == [61]
+
+
+async def test_rate_limit_gives_up_after_retries(monkeypatch):
+    from custom_components.ml_pv_forecast.core import weather as weather_module
+
+    async def fake_sleep(seconds):
+        return None
+
+    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
+    session = FakeSession(lambda url, params: (429, {"error": True, "reason": "limit"}))
+    with pytest.raises(OpenMeteoError, match="limit"):
+        await OpenMeteoClient(session, 50.0, 10.0).forecast()

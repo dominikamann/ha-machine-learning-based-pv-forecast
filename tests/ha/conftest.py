@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 from homeassistant.components.recorder.models import StatisticMetaData
 from homeassistant.components.recorder.statistics import async_import_statistics
@@ -78,6 +80,8 @@ async def open_meteo(hass):
         client = client_cls.return_value
         client.forecast.side_effect = lambda: _value((hourly, quarter))
         client.history.side_effect = lambda *args, **kwargs: _value(history)
+        leads = [history, replace(history, lead_days=np.ones(len(history)))]
+        client.history_leads.side_effect = lambda *args, **kwargs: _value(leads)
         client.history_start = start
         client.history_weather = history
         yield client

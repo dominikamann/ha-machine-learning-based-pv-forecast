@@ -163,5 +163,22 @@
         "energy": "Energy meter (Wh, kWh)"
       }
     }
+  },
+  "services": {
+    "retrain": {
+      "name": "Retrain",
+      "description": "Train the forecast model now instead of waiting for the weekly training.",
+      "fields": {
+        "plant": {
+          "name": "Plant",
+          "description": "Name of the plant. Leave empty to retrain all plants."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_plant": {
+      "message": "No PV plant named \"{plant}\"."
+    }
   }
 }

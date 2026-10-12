@@ -163,5 +163,22 @@
         "energy": "Energiezähler (Wh, kWh)"
       }
     }
+  },
+  "services": {
+    "retrain": {
+      "name": "Neu trainieren",
+      "description": "Das Prognosemodell jetzt trainieren, statt auf das wöchentliche Training zu warten.",
+      "fields": {
+        "plant": {
+          "name": "Anlage",
+          "description": "Name der Anlage. Leer lassen, um alle Anlagen neu zu trainieren."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_plant": {
+      "message": "Keine PV-Anlage mit dem Namen „{plant}“."
+    }
   }
 }

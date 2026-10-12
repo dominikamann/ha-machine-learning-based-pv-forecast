@@ -128,3 +128,25 @@ async def test_plant_without_model_trains_once_its_sensor_is_back(recorder_mock,
     await coordinator.async_refresh()
     await hass.async_block_till_done(wait_background_tasks=True)
     assert plant.model is not None and plant.error is None
+
+
+async def test_retrain_service_trains_named_or_all_plants(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    plant = next(iter(entry.runtime_data.plants.values()))
+    before = plant.model
+    await hass.services.async_call(DOMAIN, "retrain", {"plant": "Roof"}, blocking=True)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert plant.model is not before
+    with patch("custom_components.ml_pv_forecast.coordinator.MlPvCoordinator.async_train") as train:
+        await hass.services.async_call(DOMAIN, "retrain", {}, blocking=True)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert train.call_count == 1
+
+
+async def test_retrain_service_rejects_unknown_plant(recorder_mock, hass, open_meteo):
+    import pytest
+    from homeassistant.exceptions import ServiceValidationError
+
+    await setup_plant(hass, open_meteo)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "retrain", {"plant": "Nope"}, blocking=True)

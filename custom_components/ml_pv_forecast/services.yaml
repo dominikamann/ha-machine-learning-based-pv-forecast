@@ -1,0 +1,7 @@
+retrain:
+  fields:
+    plant:
+      required: false
+      example: "Roof"
+      selector:
+        text:

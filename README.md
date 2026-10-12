@@ -192,6 +192,18 @@ excluded) was:
 Before version 0.2.0 (one weather model, trained on same-day forecasts only) tomorrow's error was
 20.8 % and 24.8 %.
 
+## Retrain now
+
+Models are retrained every Sunday and, while they are still learning, every night. To retrain
+right away (e.g. after changing panels), call the action **`ml_pv_forecast.retrain`**, optionally
+with `plant: <name>`:
+
+```yaml
+action: ml_pv_forecast.retrain
+data:
+  plant: Roof   # leave out to retrain all plants
+```
+
 ## Troubleshooting
 
 Problems appear under *Settings → Repairs*:

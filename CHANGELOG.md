@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2 – 2026-10-12
+
+- *Production now* is available right after a restart for plants measured by an energy meter
+  (recent readings are taken from the recorder) instead of 1–2 minutes later.
+- New action `ml_pv_forecast.retrain` to train one or all plants right away.
+
 ## 0.3.1 – 2026-10-12
 
 - New sensors per plant and in total: **Production now** (W, live sum of the source sensors;

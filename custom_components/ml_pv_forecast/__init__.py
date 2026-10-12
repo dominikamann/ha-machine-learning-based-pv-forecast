@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry
+import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
+from .const import DOMAIN
 from .coordinator import MlPvCoordinator
 from .evcc import async_register_view
 from .frontend import async_register_card
@@ -13,6 +18,28 @@ from .frontend import async_register_card
 PLATFORMS = [Platform.SENSOR]
 
 type MlPvConfigEntry = ConfigEntry[MlPvCoordinator]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+RETRAIN_SCHEMA = vol.Schema({vol.Optional("plant"): cv.string})
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    async def retrain(call: ServiceCall) -> None:
+        """Start training now for the named plant (by name) or for all plants."""
+        name = call.data.get("plant")
+        started = 0
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.state is ConfigEntryState.LOADED:
+                started += entry.runtime_data.async_retrain(name)
+        if started == 0:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_plant",
+                translation_placeholders={"plant": name or ""},
+            )
+
+    hass.services.async_register(DOMAIN, "retrain", retrain, schema=RETRAIN_SCHEMA)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MlPvConfigEntry) -> bool:

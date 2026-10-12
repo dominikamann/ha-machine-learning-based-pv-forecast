@@ -146,6 +146,16 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 self._start_training(plant)
         await self.async_request_refresh()
 
+    @callback
+    def async_retrain(self, name: str | None = None) -> int:
+        """Start training for the plant with this name (any case) or all; returns how many."""
+        plants = [
+            p for p in self.plants.values() if name is None or p.name.casefold() == name.casefold()
+        ]
+        for plant in plants:
+            self._start_training(plant)
+        return len(plants)
+
     def _start_training(self, plant: PlantRuntime) -> None:
         plant.retry_at = dt_util.utcnow() + TRAIN_RETRY_AFTER
         self._background(self.async_train(plant.plant_id), f"train_{plant.plant_id}")

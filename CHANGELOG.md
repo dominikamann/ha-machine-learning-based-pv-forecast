@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 – 2026-10-12
+
+- Card with four views: **Overview**, **Day by day** (rotates through today, tomorrow and the day
+  after every `interval` seconds), **Rest of today** (what is still to come, in 15-minute
+  steps, with peak hour and end of production) and **Review** (step back through the last 7 days:
+  morning forecast against actual production, hit rate, hours in range). `view:` and `tabs:` to
+  use single views as separate cards. No title unless `title:` is set.
+- New sensors per plant and in total: **Hit rate yesterday** and **Hit rate 7 days**.
+- Overview shows one chart per day covering only the hours with sun (nights are left out), all
+  on one kW scale, with the day's totals above each chart; no nested card frame; own legend.
+- Fix: forecast curve attributes contained numpy numbers, which broke templates.
+
 ## 0.3.3 – 2026-10-12
 
 - Card: blue forecast, green actual, violet morning forecast; P10/P90 as one legend entry;

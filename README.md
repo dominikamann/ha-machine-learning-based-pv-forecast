@@ -110,6 +110,7 @@ Per plant and for the total:
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
 | Production now | W | live sum of the plant's sensors (energy meters: rise over the last 5 min) |
 | Production today | kWh | from the 15-minute actuals the forecast is checked against (a few minutes behind) |
+| Hit rate yesterday, hit rate 7 days | % | how close the morning forecast came to the actual production (100 % − deviation); `forecast_kwh`, `actual_kwh`, `in_band`, `days` |
 
 Accuracy sensors stay *unknown* (attribute `status: collecting`) until the nightly evaluation at
 02:30 has archived forecasts to compare: the short horizons after the first night, the day horizons
@@ -146,17 +147,31 @@ The integration ships its own card. It needs
 
 ```yaml
 type: custom:ml-pv-forecast-card
-# optional:
+# all optional:
 # entity: sensor.pv_forecast_total_forecast_curve   # default: the total, found automatically
-# days: 3                                            # 1–3
-# title: PV
+# view: overview                         # start view: overview | carousel | today | review
+# interval: 10                                       # carousel: seconds per day
+# tabs: true                                         # false: show only the start view
+# days: 3                                            # overview: 1–3 days
+# title: PV                                          # no title unless set
 ```
 
-It shows hourly bars of today's actual production (green), the live forecast (blue) with its
-P10–P90 range, this morning's forecast (violet, dashed) for today and the next days, a *now*
-marker and the daily totals. Actual production of the last 10 days is taken from Home Assistant's
-statistics when the integration starts, so the chart is complete right after installing.
-It is also in the card picker as **PV Forecast**.
+Four views, switched with the tabs at the top of the card:
+
+- **Overview** – one chart per day, covering only the hours with sun: hourly bars of the actual
+  production (green), the live forecast (blue) with its P10–P90 range and this morning's forecast
+  (violet, dashed), with the day's totals above each chart. All days share one kW scale.
+- **Day by day** (`carousel`) – today, tomorrow and the day after one at a time, full width,
+  switching automatically every `interval` seconds; the dots jump to a day.
+- **Rest of today** – what is still to come today in 15-minute steps: expected energy with range,
+  the strongest hour and when production ends.
+- **Review** – step back through the last 7 days with ‹ ›: this morning's forecast against the
+  actual production, the hit rate and how many hours were inside the range.
+
+Want separate cards instead? Use one card per view with `view:` and `tabs: false`. The card is
+also in the card picker as **PV Forecast**. Actual production of the last 10 days is taken from
+Home Assistant's statistics when the integration starts, so the chart is complete right after
+installing.
 
 ### More templates
 

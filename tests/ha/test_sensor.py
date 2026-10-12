@@ -196,3 +196,55 @@ async def test_energy_meter_power_available_right_after_start(
     state = hass.states.get(_entity(hass, entry, "total_actual_power"))
     assert state.state != "unavailable"
     assert float(state.state) == pytest.approx(600.0, rel=0.01)
+
+
+async def test_hit_rate_sensors_and_review_attribute(recorder_mock, hass, open_meteo):
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    yesterday = dt_util.now().date() - timedelta(days=1)
+    start = int(dt_util.start_of_local_day(yesterday).timestamp())
+    quarters = start + np.arange(96) * 900
+    sun = (np.arange(96) >= 32) & (np.arange(96) < 64)
+    curve = [[int(t), 80.0 * s, 100.0 * s, 120.0 * s] for t, s in zip(quarters, sun, strict=True)]
+    await hass.async_add_executor_job(
+        coordinator.archive.save_curve, "total", yesterday.isoformat(), curve
+    )
+    await hass.async_add_executor_job(
+        coordinator.archive.add_actuals, "total", quarters, np.where(sun, 90.0, 0.0)
+    )
+    await coordinator.async_evaluate(dt_util.utcnow())
+    await hass.async_block_till_done()
+    state = hass.states.get(_entity(hass, entry, "total_hit_rate_yesterday"))
+    assert float(state.state) == pytest.approx(88.9, abs=0.1)
+    assert state.attributes["forecast_kwh"] == pytest.approx(3.2)
+    week = hass.states.get(_entity(hass, entry, "total_hit_rate_week"))
+    assert float(week.state) == pytest.approx(88.9, abs=0.1)
+    review = hass.states.get(_entity(hass, entry, "total_curve")).attributes["review"]
+    assert review[0]["hit_rate"] == pytest.approx(88.9, abs=0.1) and len(review[0]["hourly"]) == 24
+
+
+async def test_states_and_attributes_contain_no_numpy_types(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    await hass.services.async_call("ml_pv_forecast", "retrain", {}, blocking=True)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    offenders = []
+
+    def walk(value, path):
+        if type(value).__module__ == "numpy":
+            offenders.append(f"{path}: {type(value).__name__}")
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                walk(v, f"{path}.{k}")
+        elif isinstance(value, list | tuple):
+            for i, v in enumerate(value[:3]):
+                walk(v, f"{path}[{i}]")
+
+    for entity in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id):
+        obj = hass.data["entity_components"]["sensor"].get_entity(entity.entity_id)
+        walk(obj.native_value, f"{entity.entity_id}.native_value")
+        walk(obj.extra_state_attributes, f"{entity.entity_id}.attributes")
+    assert offenders == []

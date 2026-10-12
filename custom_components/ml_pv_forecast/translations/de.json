@@ -139,6 +139,12 @@
       },
       "actual_energy_today": {
         "name": "Erzeugung heute"
+      },
+      "hit_rate_yesterday": {
+        "name": "Trefferquote gestern"
+      },
+      "hit_rate_week": {
+        "name": "Trefferquote 7 Tage"
       }
     }
   },

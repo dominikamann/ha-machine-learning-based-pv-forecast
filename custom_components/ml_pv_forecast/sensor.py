@@ -90,6 +90,8 @@ def _entities(coordinator: MlPvCoordinator, plant_id: str) -> list[SensorEntity]
         StatusSensor(coordinator, plant_id),
         ActualPowerSensor(coordinator, plant_id),
         ActualEnergyTodaySensor(coordinator, plant_id),
+        HitRateSensor(coordinator, plant_id, "hit_rate_yesterday"),
+        HitRateSensor(coordinator, plant_id, "hit_rate_week"),
     ]
 
 
@@ -172,7 +174,9 @@ class PeakSensor(ForecastEntity):
 class CurveSensor(ForecastEntity):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _unrecorded_attributes = frozenset({"hourly", "quarters", "morning", "actual", "daily"})
+    _unrecorded_attributes = frozenset(
+        {"hourly", "quarters", "morning", "actual", "daily", "review"}
+    )
 
     def __init__(self, coordinator, plant_id) -> None:
         super().__init__(coordinator, plant_id, "curve")
@@ -199,9 +203,10 @@ class CurveSensor(ForecastEntity):
             return [
                 {
                     "time": _iso(t),
-                    "p10": round(v[0] * scale, 1),
-                    "p50": round(v[1] * scale, 1),
-                    "p90": round(v[2] * scale, 1),
+                    # float(): numpy numbers break JSON-based consumers such as templates
+                    "p10": round(float(v[0]) * scale, 1),
+                    "p50": round(float(v[1]) * scale, 1),
+                    "p90": round(float(v[2]) * scale, 1),
                 }
                 for t, v in zip(times, values, strict=True)
                 if start <= t < end
@@ -225,6 +230,14 @@ class CurveSensor(ForecastEntity):
                 {"time": _iso(t), "w": round(float(v) * 4, 1)}
                 for t, v in zip(actual_times, actual_wh, strict=True)
                 if w.today <= t < w.tomorrow
+            ],
+            "review": [
+                {
+                    **day,
+                    "date": _iso(day["date"]),
+                    "hourly": [{**h, "time": _iso(h["time"])} for h in day["hourly"]],
+                }
+                for day in self.coordinator.review.get(self._plant_id, [])
             ],
             "hourly": rows(fc.hour_times, fc.hourly, w.today, w.day_after_end, 1.0),
             "quarters": rows(fc.quarter_times, fc.quarter, w.today, w.now + 86400, 4.0),
@@ -458,3 +471,39 @@ class ActualEnergyTodaySensor(ForecastEntity):
         today = Windows.current()
         mask = (times >= today.today) & (times < today.tomorrow)
         return round(float(np.sum(wh[mask])) / 1000, 3)
+
+
+class HitRateSensor(ForecastEntity):
+    """How closely this morning's forecast matched the actual production (yesterday, 7 days)."""
+
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+    _attr_icon = "mdi:bullseye-arrow"
+
+    def __init__(self, coordinator, plant_id, key) -> None:
+        super().__init__(coordinator, plant_id, key)
+        self._week = key == "hit_rate_week"
+
+    def _days(self) -> list[dict]:
+        days = self.coordinator.review.get(self._plant_id, [])
+        days = days if self._week else days[:1]
+        return [d for d in days if d["hit_rate"] is not None and d["complete"]]
+
+    @property
+    def native_value(self) -> float | None:
+        days = self._days()
+        if not days:
+            return None
+        return round(sum(d["hit_rate"] for d in days) / len(days), 1)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        days = self._days()
+        bands = [d["in_band"] for d in days if d["in_band"] is not None]
+        return {
+            "days": len(days),
+            "forecast_kwh": round(sum(d["forecast_kwh"] for d in days), 2) if days else None,
+            "actual_kwh": round(sum(d["actual_kwh"] for d in days), 2) if days else None,
+            "in_band": round(sum(bands) / len(bands), 1) if bands else None,
+        }

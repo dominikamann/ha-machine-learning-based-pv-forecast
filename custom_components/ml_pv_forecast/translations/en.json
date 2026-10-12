@@ -139,6 +139,12 @@
       },
       "actual_energy_today": {
         "name": "Production today"
+      },
+      "hit_rate_yesterday": {
+        "name": "Hit rate yesterday"
+      },
+      "hit_rate_week": {
+        "name": "Hit rate 7 days"
       }
     }
   },

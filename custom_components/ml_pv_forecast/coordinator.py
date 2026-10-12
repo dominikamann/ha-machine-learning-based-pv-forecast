@@ -22,7 +22,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_ENTITIES, CONF_LIMIT_W, DOMAIN, SUBENTRY_PLANT, TOTAL
 from .core.archive import Archive, ArchivedForecast
-from .core.evaluation import Correction, Metrics, compute_metrics, tau_from_rows
+from .core.evaluation import Correction, Metrics, compute_metrics, day_review, tau_from_rows
 from .core.model import NotEnoughData, PlantModel, is_current, load_model, save_model
 from .core.nowcast import DEFAULT_TAU, live_ratio
 from .core.pipeline import PlantForecast, forecast_plant, total_forecast, train_plant, window_cloud
@@ -44,6 +44,7 @@ RETENTION = timedelta(days=730)
 SHORT_RETENTION_DAYS = CORRECTION_DAYS + 35  # short-horizon rows are the bulk of the archive
 MORNING_HOUR = 5
 MORNING_UNTIL_HOUR = 10  # a "morning forecast" issued later than this would be misleading
+REVIEW_DAYS = 7
 BACKFILL = timedelta(days=10)  # Home Assistant keeps 5-minute statistics for 10 days by default
 
 
@@ -109,6 +110,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         self.metrics: dict[str, dict[str, Metrics]] = {}
         self.morning: dict[str, list] = {}
         self.actual_today: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        self.review: dict[str, list[dict]] = {}  # last REVIEW_DAYS days, newest first
         self.weather_fetched_at: datetime | None = None
         self._weather: tuple[WeatherData, WeatherData] | None = None
         self._weather_failing_since: datetime | None = None
@@ -170,6 +172,26 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             self._start_training(plant)
         return len(plants)
 
+    async def async_update_review(self) -> None:
+        """Morning forecast against actual production for each of the last days."""
+        today = dt_util.now().date()
+        days = []
+        for back in range(1, REVIEW_DAYS + 1):
+            day = today - timedelta(days=back)
+            start = int(dt_util.start_of_local_day(day).timestamp())
+            end = int(dt_util.start_of_local_day(day + timedelta(days=1)).timestamp())
+            days.append((day.isoformat(), start, end))
+        for key in [*self.plants, TOTAL]:
+            self.review[key] = await self.hass.async_add_executor_job(self._review, key, days)
+        self.async_update_listeners()
+
+    def _review(self, key: str, days: list[tuple[str, int, int]]) -> list[dict]:
+        out = []
+        for day, start, end in days:
+            times, wh = self.archive.actuals(key, start, end)
+            out.append(day_review(self.archive.load_curve(key, day), times, wh, start, end))
+        return out
+
     async def _async_backfill_actuals(self) -> None:
         """Take the last days of actual production from Home Assistant's 5-minute statistics.
 
@@ -199,7 +221,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             self.actual_today[key] = await self.hass.async_add_executor_job(
                 self.archive.actuals, key, midnight, midnight + 2 * 86400
             )
-        self.async_update_listeners()
+        await self.async_update_review()
 
     def _start_training(self, plant: PlantRuntime) -> None:
         plant.retry_at = dt_util.utcnow() + TRAIN_RETRY_AFTER
@@ -526,6 +548,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                     Correction.from_rows, rows, now_ts
                 )
                 plant.tau = await self.hass.async_add_executor_job(tau_from_rows, rows)
+        await self.async_update_review()
         cutoff = now - RETENTION
         await self.hass.async_add_executor_job(
             self.archive.prune,

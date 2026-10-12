@@ -141,3 +141,56 @@ def tau_from_rows(rows: list[EvalRow]) -> float:
         lead,
         np.array([r.actual for r in rows]),
     )
+
+
+def day_review(
+    morning_curve: list | None,
+    actual_times: np.ndarray,
+    actual_wh: np.ndarray,
+    day_start: int,
+    day_end: int,
+) -> dict:
+    """How well the morning forecast matched one day.
+
+    ``morning_curve`` holds quarter rows ``[start, p10, p50, p90]`` in Wh, actuals are quarter
+    Wh. Hit rate: 100 % minus the deviation of the daily forecast from the actual energy.
+    In band: share of producing hours whose actual energy lay between P10 and P90.
+    """
+    hours = np.arange(day_start, day_end, 3600)
+    actual_h = np.zeros(len(hours))
+    mask = (actual_times >= day_start) & (actual_times < day_end)
+    np.add.at(actual_h, ((actual_times[mask] - day_start) // 3600).astype(int), actual_wh[mask])
+    complete = int(mask.sum()) >= 0.9 * (day_end - day_start) / 900
+    review = {
+        "date": int(day_start),
+        "actual_kwh": round(float(actual_h.sum()) / 1000, 2),
+        "forecast_kwh": None,
+        "hit_rate": None,
+        "in_band": None,
+        "complete": complete,
+        "hourly": [
+            {"time": int(t), "w": round(float(a), 1)} for t, a in zip(hours, actual_h, strict=True)
+        ],
+    }
+    if not morning_curve:
+        return review
+    curve = np.asarray(morning_curve, dtype=float)
+    forecast_h = np.zeros((len(hours), 3))
+    inside = (curve[:, 0] >= day_start) & (curve[:, 0] < day_end)
+    np.add.at(forecast_h, ((curve[inside, 0] - day_start) // 3600).astype(int), curve[inside, 1:])
+    forecast = float(forecast_h[:, 1].sum())
+    actual = float(actual_h.sum())
+    if actual > 0:
+        hit = max(0.0, 1 - abs(forecast - actual) / actual) * 100
+    else:
+        hit = 100.0 if forecast <= 0 else 0.0
+    producing = (forecast_h[:, 2] > 0) | (actual_h > 0)
+    within = (actual_h >= forecast_h[:, 0]) & (actual_h <= forecast_h[:, 2])
+    review.update(
+        forecast_kwh=round(forecast / 1000, 2),
+        hit_rate=round(hit, 1),
+        in_band=round(float(within[producing].mean()) * 100, 1) if producing.any() else None,
+    )
+    for row, f in zip(review["hourly"], forecast_h, strict=True):
+        row.update(p10=round(float(f[0]), 1), p50=round(float(f[1]), 1), p90=round(float(f[2]), 1))
+    return review

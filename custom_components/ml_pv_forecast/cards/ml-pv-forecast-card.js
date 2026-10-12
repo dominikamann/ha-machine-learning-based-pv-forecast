@@ -1,48 +1,83 @@
 /*
  * PV forecast card for the Machine-Learning-Based PV Forecast integration.
  *
- * Shows today's actual production next to this morning's and the live forecast, and the hourly
- * forecast with its P10–P90 range for the next days. Rendering is delegated to apexcharts-card.
+ * Three views, switched with the tabs at the top:
+ *   overview – today and the next days, one chart per day covering only the hours with sun
+ *   carousel – one day at a time (today, tomorrow, ...), switching automatically
+ *   today    – what is still to come today, in 15-minute steps
+ *   review   – the last 7 days: morning forecast against actual production and the hit rate
+ * Rendering is delegated to apexcharts-card.
  *
  *   type: custom:ml-pv-forecast-card
  *   entity: sensor.pv_forecast_total_forecast_curve   # optional, found automatically
- *   days: 3                                            # 1–3, optional
- *   title: PV                                          # optional
+ *   days: 3                                            # overview: 1–3, optional
+ *   view: overview                       # start view: overview | carousel | today | review
+ *   interval: 10                                       # carousel: seconds per day
+ *   tabs: true                                         # false shows only the start view
+ *   title: PV                                          # optional, no title by default
  */
 
 const TEXT = {
   en: {
-    title: "PV forecast",
+    overview: "Overview",
+    carousel: "Day by day",
+    todayTab: "Rest of today",
+    review: "Review",
     actual: "Actual",
     forecast: "Forecast",
-    morning: "This morning's forecast",
+    morning: "Morning forecast",
     range: "Range (P10–P90)",
     today: "Today",
     tomorrow: "Tomorrow",
     dayAfter: "Day after tomorrow",
     sofar: "so far",
+    remaining: "Still expected",
+    peak: "Strongest hour",
+    end: "Production ends",
+    done: "Production for today is over.",
+    hitRate: "Hit rate",
+    inBand: "Hours in range",
+    noMorning: "No morning forecast was recorded for this day.",
     noApex:
       "This card needs apexcharts-card. Install it via HACS (Frontend → apexcharts-card) and reload the page.",
     noEntity: "No forecast found. Set up the Machine-Learning-Based PV Forecast integration first.",
+    noReview: "No past days recorded yet.",
   },
   de: {
-    title: "PV-Prognose",
+    overview: "Übersicht",
+    carousel: "Tag für Tag",
+    todayTab: "Heute noch",
+    review: "Rückblick",
     actual: "Tatsächlich",
     forecast: "Prognose",
-    morning: "Prognose von heute früh",
+    morning: "Morgenprognose",
     range: "Bandbreite (P10–P90)",
     today: "Heute",
     tomorrow: "Morgen",
     dayAfter: "Übermorgen",
     sofar: "bisher",
+    remaining: "Noch erwartet",
+    peak: "Stärkste Stunde",
+    end: "Erzeugung endet",
+    done: "Die Erzeugung für heute ist vorbei.",
+    hitRate: "Trefferquote",
+    inBand: "Stunden im Band",
+    noMorning: "Für diesen Tag wurde keine Morgenprognose gespeichert.",
     noApex:
       "Diese Karte braucht apexcharts-card. Installiere sie über HACS (Frontend → apexcharts-card) und lade die Seite neu.",
     noEntity:
       "Keine Prognose gefunden. Richte zuerst die Integration Machine-Learning-Based PV Forecast ein.",
+    noReview: "Noch keine vergangenen Tage aufgezeichnet.",
   },
 };
 
 const COLORS = { forecast: "#29B6F6", band: "#81D4FA", actual: "#66BB6A", morning: "#B39DDB" };
+const VIEWS = ["overview", "carousel", "today", "review"];
+const HOUR = 3600000;
+const DAY = 24 * HOUR;
+// Hide the inner apexcharts card frame so the charts sit flush inside this card.
+const FLUSH =
+  "--ha-card-border-width:0;--ha-card-box-shadow:none;--ha-card-background:transparent;--ha-card-border-radius:0;";
 
 function isForecastCurve(state) {
   const a = state && state.attributes;
@@ -50,32 +85,67 @@ function isForecastCurve(state) {
 }
 
 // Bodies of apexcharts-card data_generator functions (they receive `entity`).
+const hourlyAverage = (source, field) => `
+    const hours = {};
+    (${source} || []).forEach(r => {
+      const t = new Date(r.time); t.setMinutes(0, 0, 0);
+      (hours[t.getTime()] ??= []).push(r.${field});
+    });
+    return Object.entries(hours).map(([t, v]) => [Number(t), v.reduce((a, b) => a + b, 0) / v.length / 1000]);`;
 const GEN = {
   hourly: (key) => `
     return (entity.attributes.hourly || []).map(r => [new Date(r.time).getTime(), r.${key} / 1000]);`,
-  morning: `
-    const hours = {};
-    (entity.attributes.morning || []).forEach(r => {
-      const t = new Date(r.time); t.setMinutes(0, 0, 0);
-      (hours[t.getTime()] ??= []).push(r.p50);
-    });
-    return Object.entries(hours).map(([t, v]) => [Number(t), v.reduce((a, b) => a + b, 0) / v.length / 1000]);`,
-  actual: `
-    const hours = {};
-    (entity.attributes.actual || []).forEach(r => {
-      const t = new Date(r.time); t.setMinutes(0, 0, 0);
-      (hours[t.getTime()] ??= []).push(r.w);
-    });
-    return Object.entries(hours).map(([t, v]) => [Number(t), v.reduce((a, b) => a + b, 0) / v.length / 1000]);`,
+  quartersAhead: (key) => `
+    const now = Date.now() - 15 * 60 * 1000;
+    return (entity.attributes.quarters || [])
+      .filter(r => new Date(r.time).getTime() >= now)
+      .map(r => [new Date(r.time).getTime(), r.${key} / 1000]);`,
+  morning: hourlyAverage("entity.attributes.morning", "p50"),
+  actual: hourlyAverage("entity.attributes.actual", "w"),
+  review: (index, key) => `
+    const day = (entity.attributes.review || [])[${index}];
+    if (!day) return [];
+    return day.hourly.filter(h => h.${key} !== undefined)
+      .map(h => [new Date(h.time).getTime(), h.${key} / 1000]);`,
 };
+
+function localMidnight(offsetDays = 0) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + offsetDays);
+  return d.getTime();
+}
+
+// Hours of a day [start, end) that are worth showing: production or forecast, plus one hour.
+function sunWindow(dayStart, points) {
+  const hours = points
+    .filter(([t, v]) => t >= dayStart && t < dayStart + DAY && v > 0.005)
+    .map(([t]) => Math.floor((t - dayStart) / HOUR));
+  if (!hours.length) return [6, 20];
+  let start = Math.max(0, Math.min(...hours) - 1);
+  let end = Math.min(24, Math.max(...hours) + 2);
+  if (end - start < 6) {
+    const pad = Math.ceil((6 - (end - start)) / 2);
+    start = Math.max(0, start - pad);
+    end = Math.min(24, end + pad);
+  }
+  return [start, end];
+}
 
 class MlPvForecastCard extends HTMLElement {
   setConfig(config) {
     const days = Number(config.days ?? 3);
     if (!(days >= 1 && days <= 3)) throw new Error("days must be 1, 2 or 3");
-    this._config = { ...config, days };
-    this._chart = undefined;
-    this._chartEntity = undefined;
+    const view = config.view ?? "overview";
+    if (!VIEWS.includes(view)) throw new Error(`view must be one of ${VIEWS.join(", ")}`);
+    const interval = Number(config.interval ?? 10);
+    if (!(interval >= 2)) throw new Error("interval must be at least 2 seconds");
+    this._config = { tabs: true, ...config, days, view, interval };
+    this._view = view;
+    this._reviewIndex = 0;
+    this._dayIndex = 0;
+    this._restartCarousel();
+    this._chartsKey = undefined;
     this._render();
   }
 
@@ -85,7 +155,7 @@ class MlPvForecastCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 6;
+    return 7;
   }
 
   static getStubConfig() {
@@ -97,6 +167,10 @@ class MlPvForecastCard extends HTMLElement {
     return TEXT[lang] || TEXT.en;
   }
 
+  _lang() {
+    return this._hass?.locale?.language || this._hass?.language || "en";
+  }
+
   _entityId() {
     if (this._config.entity) return this._config.entity;
     const states = Object.values(this._hass.states).filter(isForecastCurve);
@@ -104,27 +178,59 @@ class MlPvForecastCard extends HTMLElement {
     return (total || states[0])?.entity_id;
   }
 
+  _kwh(value) {
+    if (value === undefined || value === null) return "–";
+    return `${Number(value).toLocaleString(this._lang(), { maximumFractionDigits: 1 })} kWh`;
+  }
+
+  _time(value) {
+    return new Date(value).toLocaleTimeString(this._lang(), { hour: "2-digit", minute: "2-digit" });
+  }
+
+  _setView(view) {
+    this._view = view;
+    this._dayIndex = 0;
+    this._chartsKey = undefined;
+    this._restartCarousel();
+    this._render();
+  }
+
+  _showDay(index) {
+    this._dayIndex = index;
+    this._chartsKey = undefined;
+    this._restartCarousel(); // a click restarts the timer so the chosen day stays a while
+    this._render();
+  }
+
+  _restartCarousel() {
+    clearInterval(this._timer);
+    this._timer = undefined;
+    if (this._view !== "carousel" || !this.isConnected) return;
+    this._timer = setInterval(() => {
+      this._dayIndex = (this._dayIndex + 1) % this._config.days;
+      this._chartsKey = undefined;
+      this._render();
+    }, this._config.interval * 1000);
+  }
+
+  connectedCallback() {
+    this._restartCarousel();
+  }
+
+  disconnectedCallback() {
+    clearInterval(this._timer);
+    this._timer = undefined;
+  }
+
+  _shiftReview(delta) {
+    this._reviewIndex = Math.max(0, Math.min(6, this._reviewIndex + delta));
+    this._chartsKey = undefined;
+    this._render();
+  }
+
   _render() {
     if (!this._config || !this._hass) return;
-    if (!this._card) {
-      this._card = document.createElement("ha-card");
-      this._header = document.createElement("div");
-      this._header.className = "header";
-      this._body = document.createElement("div");
-      const style = document.createElement("style");
-      style.textContent = `
-        .header { padding: 16px 16px 0; }
-        .title { font-size: 1.2em; font-weight: 500; }
-        .days { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 6px; }
-        .day { display: flex; flex-direction: column; }
-        .label { color: var(--secondary-text-color); font-size: 0.85em; }
-        .value { font-size: 1.15em; font-weight: 500; }
-        .sub { color: var(--secondary-text-color); font-size: 0.8em; }
-        .message { padding: 16px; color: var(--secondary-text-color); }
-      `;
-      this._card.append(style, this._header, this._body);
-      this.append(this._card);
-    }
+    if (!this._card) this._build();
     const t = this._t();
     const entityId = this._entityId();
     const state = entityId && this._hass.states[entityId];
@@ -133,49 +239,246 @@ class MlPvForecastCard extends HTMLElement {
       this._body.innerHTML = `<div class="message">${t.noEntity}</div>`;
       return;
     }
-    this._renderHeader(state, t);
+    this._header.innerHTML = this._headerHtml(state, t);
     if (!customElements.get("apexcharts-card")) {
       this._body.innerHTML = `<div class="message">${t.noApex}</div>`;
       customElements.whenDefined("apexcharts-card").then(() => this._render());
       return;
     }
-    if (!this._chart || this._chartEntity !== entityId) {
-      this._chart = document.createElement("apexcharts-card");
-      this._chart.setConfig(this._chartConfig(entityId, t));
-      this._chartEntity = entityId;
-      this._body.innerHTML = "";
-      this._body.append(this._chart);
+    const message = this._message(state, t);
+    if (message) {
+      this._charts = [];
+      this._chartsKey = undefined;
+      this._body.innerHTML = `<div class="message">${message}</div>`;
+      return;
     }
-    this._chart.hass = this._hass;
+    // Rebuild the charts when the view, the day or the shown hours change (once an hour at most).
+    const specs = this._specs(entityId, state, t);
+    const key = `${entityId}|${this._view}|${this._reviewIndex}|${specs.map((s) => s.key).join(",")}`;
+    if (this._chartsKey !== key) {
+      this._chartsKey = key;
+      this._charts = [];
+      const grid = document.createElement("div");
+      grid.className = "charts";
+      grid.style.gridTemplateColumns = specs.map((s) => `${s.weight}fr`).join(" ");
+      for (const spec of specs) {
+        const column = document.createElement("div");
+        column.className = "column";
+        if (spec.head) column.innerHTML = spec.head;
+        const chart = document.createElement("apexcharts-card");
+        chart.style.cssText = FLUSH;
+        chart.setConfig(spec.config);
+        column.append(chart);
+        grid.append(column);
+        this._charts.push(chart);
+      }
+      const legend = document.createElement("div");
+      legend.className = "legend";
+      legend.innerHTML = this._legend(t);
+      this._body.innerHTML = "";
+      this._body.append(grid, legend);
+    } else {
+      // Update the per-day headings (values change during the day) without rebuilding charts.
+      this._body.querySelectorAll(".column").forEach((column, i) => {
+        const heading = column.querySelector(".col-head");
+        if (heading && specs[i]?.head) heading.outerHTML = specs[i].head;
+      });
+    }
+    for (const chart of this._charts) chart.hass = this._hass;
   }
 
-  _renderHeader(state, t) {
-    const daily = state.attributes.daily || {};
-    const actualKwh =
-      (state.attributes.actual || []).reduce((sum, r) => sum + r.w, 0) / 4 / 1000;
-    const fmt = (v) =>
-      v === undefined || v === null
-        ? "–"
-        : `${Number(v).toLocaleString(this._hass.locale?.language, { maximumFractionDigits: 1 })} kWh`;
-    const days = [
-      [t.today, daily.today, `${t.sofar} ${fmt(actualKwh)}`],
-      [t.tomorrow, daily.tomorrow],
-      [t.dayAfter, daily.day_after_tomorrow],
-    ].slice(0, Math.max(this._config.days, 1));
-    this._header.innerHTML = `
-      <div class="title">${this._config.title ?? t.title}</div>
-      <div class="days">${days
-        .map(
-          ([label, value, sub]) => `
-          <div class="day"><span class="label">${label}</span>
-            <span class="value">${fmt(value)}</span>${sub ? `<span class="sub">${sub}</span>` : ""}
-          </div>`
-        )
-        .join("")}</div>`;
+  _build() {
+    this._card = document.createElement("ha-card");
+    this._header = document.createElement("div");
+    this._header.className = "header";
+    this._body = document.createElement("div");
+    this._body.className = "body";
+    const style = document.createElement("style");
+    style.textContent = `
+      .header { padding: 12px 16px 0; }
+      .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+      .title { font-size: 1.15em; font-weight: 500; }
+      .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+      .tab { border: 1px solid var(--divider-color); background: none; color: var(--secondary-text-color);
+             border-radius: 14px; padding: 3px 12px; font-size: 0.85em; cursor: pointer; }
+      .tab.active { background: var(--primary-color); border-color: var(--primary-color);
+                    color: var(--text-primary-color, #fff); }
+      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+               gap: 4px 16px; margin-top: 12px; }
+      .stat .label, .col-head .label { color: var(--secondary-text-color); font-size: 0.8em; }
+      .stat .value, .col-head .value { font-size: 1.2em; font-weight: 500; line-height: 1.3; }
+      .sub { color: var(--secondary-text-color); font-size: 0.8em; }
+      .nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; }
+      .nav span { min-width: 12em; text-align: center; font-weight: 500; }
+      .nav button { background: none; border: 1px solid var(--divider-color); border-radius: 50%;
+                    width: 28px; height: 28px; color: var(--primary-text-color); cursor: pointer; }
+      .nav button:disabled { opacity: 0.3; cursor: default; }
+      .body { padding: 4px 4px 8px; }
+      .charts { display: grid; gap: 0; }
+      .column { min-width: 0; border-left: 1px solid var(--divider-color); }
+      .column:first-child { border-left: none; }
+      .col-head { padding: 8px 12px 0; }
+      .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px;
+                font-size: 0.8em; color: var(--secondary-text-color); padding: 0 12px; }
+      .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px;
+                             border-radius: 2px; margin-right: 6px; background: var(--c); }
+      .legend span.dash::before { height: 0; border-top: 2px dashed var(--c); background: none;
+                                  vertical-align: middle; }
+      .message { padding: 16px; color: var(--secondary-text-color); }
+      .dots { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+      .dots button { width: 9px; height: 9px; border-radius: 50%; border: none; padding: 0;
+                     background: var(--divider-color); cursor: pointer; }
+      .dots button.active { background: var(--primary-color); }
+    `;
+    this._card.append(style, this._header, this._body);
+    this.append(this._card);
+    this._header.addEventListener("click", (ev) => {
+      const target = ev.target.closest("[data-view],[data-shift],[data-day]");
+      if (!target || target.disabled) return;
+      if (target.dataset.view) this._setView(target.dataset.view);
+      if (target.dataset.day) this._showDay(Number(target.dataset.day));
+      if (target.dataset.shift) this._shiftReview(Number(target.dataset.shift));
+    });
   }
 
-  _chartConfig(entity, t) {
-    const line = (name, color, generator, extra = {}) => ({
+  _message(state, t) {
+    if (this._view === "review" && !(state.attributes.review || [])[this._reviewIndex]) {
+      return t.noReview;
+    }
+    if (this._view === "today" && !this._todaySummary(state)) return t.done;
+    return undefined;
+  }
+
+  _legend(t) {
+    const item = (label, color, dash) =>
+      `<span class="${dash ? "dash" : ""}" style="--c:${color}">${label}</span>`;
+    const items = {
+      overview: [
+        item(t.actual, COLORS.actual),
+        item(t.forecast, COLORS.forecast),
+        item(t.range, COLORS.band, true),
+        item(t.morning, COLORS.morning, true),
+      ],
+      today: [item(t.forecast, COLORS.forecast), item(t.range, COLORS.band, true)],
+      review: [
+        item(t.actual, COLORS.actual),
+        item(t.morning, COLORS.morning, true),
+        item(t.range, COLORS.band, true),
+      ],
+    };
+    if (this._view === "carousel") {
+      return (this._dayIndex === 0 ? items.overview : items.today).join("");
+    }
+    return items[this._view].join("");
+  }
+
+  _headerHtml(state, t) {
+    const title = this._config.title ? `<div class="title">${this._config.title}</div>` : "";
+    const tabs = this._config.tabs
+      ? `<div class="tabs">${VIEWS.map(
+          (v) =>
+            `<button class="tab ${v === this._view ? "active" : ""}" data-view="${v}">${
+              { overview: t.overview, carousel: t.carousel, today: t.todayTab, review: t.review }[v]
+            }</button>`
+        ).join("")}</div>`
+      : "";
+    const top = title || tabs ? `<div class="top">${title}${tabs}</div>` : "";
+    if (this._view === "today") return top + this._todayStats(state, t);
+    if (this._view === "review") return top + this._reviewStats(state, t);
+    if (this._view === "carousel") return top + this._carouselStats(state, t);
+    return top;
+  }
+
+  _stat(label, value, sub) {
+    return `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div>${
+      sub ? `<div class="sub">${sub}</div>` : ""
+    }</div>`;
+  }
+
+  _colHead(label, value, sub) {
+    return `<div class="col-head"><div class="label">${label}</div><div class="value">${value}</div>${
+      sub ? `<div class="sub">${sub}</div>` : '<div class="sub">&nbsp;</div>'
+    }</div>`;
+  }
+
+  _carouselStats(state, t) {
+    const a = state.attributes;
+    const daily = a.daily || {};
+    const i = this._dayIndex;
+    const label = [t.today, t.tomorrow, t.dayAfter][i];
+    const value = [daily.today, daily.tomorrow, daily.day_after_tomorrow][i];
+    const actualKwh = (a.actual || []).reduce((sum, r) => sum + r.w, 0) / 4 / 1000;
+    const dots = Array.from(
+      { length: this._config.days },
+      (_, d) => `<button class="${d === i ? "active" : ""}" data-day="${d}" aria-label="${d}"></button>`
+    ).join("");
+    return `<div class="stats">${this._stat(
+      label,
+      this._kwh(value),
+      i === 0 ? `${t.sofar} ${this._kwh(actualKwh)}` : undefined
+    )}</div><div class="dots">${dots}</div>`;
+  }
+
+  _todaySummary(state) {
+    const now = Date.now();
+    const end = localMidnight(1);
+    const rows = (state.attributes.quarters || []).filter((r) => {
+      const time = new Date(r.time).getTime();
+      return time + 15 * 60 * 1000 > now && time < end;
+    });
+    if (!rows.length) return undefined;
+    const sum = (key) => rows.reduce((s, r) => s + r[key], 0) / 4 / 1000;
+    const p50 = sum("p50");
+    if (p50 < 0.05) return undefined;
+    const peak = rows.reduce((best, r) => (r.p50 > best.p50 ? r : best), rows[0]);
+    const last = [...rows].reverse().find((r) => r.p50 > peak.p50 * 0.05);
+    return {
+      p10: sum("p10"),
+      p50,
+      p90: sum("p90"),
+      peak,
+      end: new Date(last.time).getTime() + 15 * 60 * 1000,
+    };
+  }
+
+  _todayStats(state, t) {
+    const s = this._todaySummary(state);
+    if (!s) return "";
+    const kw = (s.peak.p50 / 1000).toLocaleString(this._lang(), { maximumFractionDigits: 1 });
+    return `<div class="stats">${[
+      this._stat(t.remaining, this._kwh(s.p50), `${this._kwh(s.p10)} – ${this._kwh(s.p90)}`),
+      this._stat(t.peak, this._time(s.peak.time), `${kw} kW`),
+      this._stat(t.end, `≈ ${this._time(s.end)}`),
+    ].join("")}</div>`;
+  }
+
+  _reviewStats(state, t) {
+    const days = state.attributes.review || [];
+    const day = days[this._reviewIndex];
+    const date = day
+      ? new Date(day.date).toLocaleDateString(this._lang(), {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        })
+      : "";
+    const nav = `<div class="nav">
+      <button data-shift="1" ${this._reviewIndex >= days.length - 1 ? "disabled" : ""}>‹</button>
+      <span>${date}</span>
+      <button data-shift="-1" ${this._reviewIndex === 0 ? "disabled" : ""}>›</button></div>`;
+    if (!day) return nav;
+    const pct = (v) => (v === null || v === undefined ? "–" : `${Math.round(v)} %`);
+    const note = day.forecast_kwh === null ? `<div class="sub">${t.noMorning}</div>` : "";
+    return `${nav}<div class="stats">${[
+      this._stat(t.morning, this._kwh(day.forecast_kwh)),
+      this._stat(t.actual, this._kwh(day.actual_kwh)),
+      this._stat(t.hitRate, pct(day.hit_rate)),
+      this._stat(t.inBand, pct(day.in_band)),
+    ].join("")}</div>${note}`;
+  }
+
+  _series(entity, name, color, generator, extra = {}) {
+    return {
       entity,
       name,
       color,
@@ -187,51 +490,167 @@ class MlPvForecastCard extends HTMLElement {
       show: { in_header: false, legend_value: false },
       data_generator: generator,
       ...extra,
-    });
-    const midnight = new Date();
-    midnight.setHours(24, 0, 0, 0);
-    const dayMarks = [t.tomorrow, t.dayAfter].slice(0, this._config.days - 1).map((label, i) => ({
-      x: midnight.getTime() + i * 86400000,
-      borderColor: "#9E9E9E",
-      strokeDashArray: 0,
-      label: {
-        text: label,
-        orientation: "horizontal",
-        position: "top",
-        textAnchor: "start",
-        offsetX: 6,
-        offsetY: -4,
-        borderWidth: 0,
-        style: { background: "transparent", color: "#9E9E9E", fontSize: "12px" },
-      },
-    }));
+    };
+  }
+
+  _band(entity, t, low, high) {
+    const style = { stroke_width: 1, opacity: 0.8, stroke_dash: 4 };
+    return [
+      this._series(entity, t.range, COLORS.band, low, style),
+      this._series(entity, t.range, COLORS.band, high, style),
+    ];
+  }
+
+  _chart({ entity, start, hours, max, yAxis, now, series }) {
+    const offset = Math.round((start - localMidnight()) / HOUR);
     return {
       type: "custom:apexcharts-card",
-      graph_span: `${this._config.days * 24}h`,
-      span: { start: "day" },
-      now: { show: true, color: "#9E9E9E" },
       header: { show: false },
-      yaxis: [{ min: 0, decimals: 1, apex_config: { title: { text: "kW" } } }],
+      graph_span: `${hours}h`,
+      span: offset ? { start: "day", offset: `${offset > 0 ? "+" : ""}${offset}h` } : { start: "day" },
+      now: { show: now, color: "#9E9E9E" },
+      yaxis: [
+        {
+          min: 0,
+          max,
+          decimals: 1,
+          apex_config: { show: yAxis, tickAmount: 4, title: { text: yAxis ? "kW" : "" } },
+        },
+      ],
       apex_config: {
-        chart: { height: 280 },
-        legend: { show: true, position: "bottom" },
+        chart: { height: 230, parentHeightOffset: 0 },
+        legend: { show: false },
+        grid: { padding: { left: yAxis ? 0 : 8, right: 8 } },
+        xaxis: { labels: { datetimeUTC: false, format: "HH:mm" }, tickAmount: 4 },
         tooltip: { x: { format: "ddd HH:mm" } },
-        annotations: { xaxis: dayMarks },
         stroke: { curve: "smooth" },
       },
-      series: [
-        line(t.actual, COLORS.actual, GEN.actual, { type: "column", stroke_width: 0, opacity: 0.85 }),
-        line(t.forecast, COLORS.forecast, GEN.hourly("p50"), { type: "area", opacity: 0.25 }),
-        line(t.range, COLORS.band, GEN.hourly("p10"), { stroke_width: 1, opacity: 0.8, stroke_dash: 4 }),
-        line(t.range, COLORS.band, GEN.hourly("p90"), {
-          stroke_width: 1,
-          opacity: 0.8,
-          stroke_dash: 4,
-          show: { in_header: false, legend_value: false, in_legend: false },
-        }),
-        line(t.morning, COLORS.morning, GEN.morning, { stroke_width: 2, stroke_dash: 6 }),
-      ],
+      series: series.map((s) => ({ ...s, entity })),
     };
+  }
+
+  _maxKw(values) {
+    const max = Math.max(0.5, ...values) * 1.1;
+    return Math.ceil(max * 2) / 2;
+  }
+
+  _specs(entity, state, t) {
+    const a = state.attributes;
+    if (this._view === "today") {
+      const s = this._todaySummary(state);
+      const start = Date.now() - (Date.now() % HOUR);
+      const hours = Math.max(1, Math.ceil((s.end - start) / HOUR));
+      const max = this._maxKw((a.quarters || []).map((r) => r.p90 / 1000));
+      return [
+        {
+          key: `${start}-${hours}`,
+          weight: 1,
+          config: this._chart({
+            entity,
+            start,
+            hours,
+            max,
+            yAxis: true,
+            now: true,
+            series: [
+              this._series(entity, t.forecast, COLORS.forecast, GEN.quartersAhead("p50"), {
+                type: "area",
+                opacity: 0.3,
+              }),
+              ...this._band(entity, t, GEN.quartersAhead("p10"), GEN.quartersAhead("p90")),
+            ],
+          }),
+        },
+      ];
+    }
+    if (this._view === "review") {
+      const i = this._reviewIndex;
+      const day = a.review[i];
+      const dayStart = new Date(day.date).getTime();
+      const points = day.hourly.flatMap((h) => [
+        [new Date(h.time).getTime(), (h.w ?? 0) / 1000],
+        [new Date(h.time).getTime(), (h.p90 ?? 0) / 1000],
+      ]);
+      const [from, to] = sunWindow(dayStart, points);
+      const max = this._maxKw(points.map(([, v]) => v));
+      return [
+        {
+          key: `${from}-${to}`,
+          weight: 1,
+          config: this._chart({
+            entity,
+            start: dayStart + from * HOUR,
+            hours: to - from,
+            max,
+            yAxis: true,
+            now: false,
+            series: [
+              this._series(entity, t.actual, COLORS.actual, GEN.review(i, "w"), {
+                type: "column",
+                stroke_width: 0,
+                opacity: 0.85,
+              }),
+              this._series(entity, t.morning, COLORS.morning, GEN.review(i, "p50"), {
+                stroke_dash: 6,
+              }),
+              ...this._band(entity, t, GEN.review(i, "p10"), GEN.review(i, "p90")),
+            ],
+          }),
+        },
+      ];
+    }
+    // Overview: one chart per day, each covering only the hours with sun, sharing one kW scale.
+    const hourly = (a.hourly || []).map((r) => [new Date(r.time).getTime(), r.p90 / 1000]);
+    const actual = (a.actual || []).map((r) => [new Date(r.time).getTime(), r.w / 1000]);
+    const max = this._maxKw([...hourly, ...actual].map(([, v]) => v));
+    const daily = a.daily || {};
+    const actualKwh = (a.actual || []).reduce((sum, r) => sum + r.w, 0) / 4 / 1000;
+    const heads = [
+      this._colHead(t.today, this._kwh(daily.today), `${t.sofar} ${this._kwh(actualKwh)}`),
+      this._colHead(t.tomorrow, this._kwh(daily.tomorrow)),
+      this._colHead(t.dayAfter, this._kwh(daily.day_after_tomorrow)),
+    ];
+    const specs = [];
+    const indices =
+      this._view === "carousel"
+        ? [this._dayIndex]
+        : Array.from({ length: this._config.days }, (_, i) => i);
+    for (const i of indices) {
+      const dayStart = localMidnight(i);
+      const [from, to] = sunWindow(dayStart, i === 0 ? [...hourly, ...actual] : hourly);
+      const series = [
+        this._series(entity, t.forecast, COLORS.forecast, GEN.hourly("p50"), {
+          type: "area",
+          opacity: 0.3,
+        }),
+        ...this._band(entity, t, GEN.hourly("p10"), GEN.hourly("p90")),
+      ];
+      if (i === 0) {
+        series.unshift(
+          this._series(entity, t.actual, COLORS.actual, GEN.actual, {
+            type: "column",
+            stroke_width: 0,
+            opacity: 0.85,
+          })
+        );
+        series.push(this._series(entity, t.morning, COLORS.morning, GEN.morning, { stroke_dash: 6 }));
+      }
+      specs.push({
+        key: `${from}-${to}`,
+        weight: to - from,
+        head: this._view === "carousel" ? undefined : heads[i],
+        config: this._chart({
+          entity,
+          start: dayStart + from * HOUR,
+          hours: to - from,
+          max,
+          yAxis: i === indices[0],
+          now: i === 0,
+          series,
+        }),
+      });
+    }
+    return specs;
   }
 }
 
@@ -240,7 +659,8 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "ml-pv-forecast-card",
   name: "PV Forecast",
-  description: "Actual production and the machine-learning PV forecast for today and the next days.",
+  description:
+    "Machine-learning PV forecast: the next days (sun hours only), what is still to come today and a review of past days with the hit rate.",
   preview: true,
   documentationURL: "https://github.com/dominikamann/ha-machine-learning-based-pv-forecast",
 });

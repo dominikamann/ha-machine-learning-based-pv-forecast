@@ -100,3 +100,33 @@ def test_tau_from_rows_uses_short_rows_with_ratio():
     assert tau_from_rows(rows) == 30.0  # ratio 1 everywhere: every tau ties, first grid value wins
     assert tau_from_rows([row(500, 500, horizon="1h")]) == 90.0  # no ratio -> default
     assert tau_from_rows([]) == 90.0
+
+
+def test_day_review_hit_rate_band_and_hourly():
+    from custom_components.ml_pv_forecast.core.evaluation import day_review
+
+    day = 86400 * 100
+    quarters = day + np.arange(96) * 900
+    sun = (np.arange(96) >= 32) & (np.arange(96) < 64)  # 08:00–16:00
+    curve = [[int(t), 80.0 * s, 100.0 * s, 120.0 * s] for t, s in zip(quarters, sun, strict=True)]
+    actual = np.where(sun, 90.0, 0.0)  # 10 % below the forecast, inside the band
+    review = day_review(curve, quarters, actual, day, day + 86400)
+    assert review["forecast_kwh"] == pytest.approx(3.2)
+    assert review["actual_kwh"] == pytest.approx(2.88)
+    assert review["hit_rate"] == pytest.approx(88.9, abs=0.1)
+    assert review["in_band"] == 100.0
+    assert review["complete"] is True
+    assert len(review["hourly"]) == 24
+    ten = review["hourly"][10]
+    assert ten["p50"] == pytest.approx(400.0) and ten["w"] == 360.0
+
+
+def test_day_review_without_morning_forecast_or_with_gaps():
+    from custom_components.ml_pv_forecast.core.evaluation import day_review
+
+    day = 86400 * 100
+    quarters = day + np.arange(40) * 900
+    review = day_review(None, quarters, np.full(40, 50.0), day, day + 86400)
+    assert review["forecast_kwh"] is None and review["hit_rate"] is None
+    assert review["actual_kwh"] == pytest.approx(2.0)
+    assert review["complete"] is False

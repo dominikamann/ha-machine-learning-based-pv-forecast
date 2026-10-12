@@ -9,3 +9,15 @@ def test_daily_errors():
     predicted = np.full(48, 110.0)
     mae, nmae = daily_errors(times, actual, predicted)
     assert mae == 0.24 and nmae == 10.0
+
+
+def test_script_runs_as_documented():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).parents[1]
+    result = subprocess.run(
+        [sys.executable, "tools/backtest.py", "--help"], cwd=root, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr

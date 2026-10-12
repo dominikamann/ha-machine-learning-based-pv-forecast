@@ -11,15 +11,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import aiohttp
 import numpy as np
 
-from custom_components.ml_pv_forecast.core.features import build_features
-from custom_components.ml_pv_forecast.core.model import fit_fallback
-from custom_components.ml_pv_forecast.core.pipeline import train_plant
-from custom_components.ml_pv_forecast.core.weather import OpenMeteoClient
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # run from a checkout
+
+from custom_components.ml_pv_forecast.core.features import build_features  # noqa: E402
+from custom_components.ml_pv_forecast.core.model import fit_fallback  # noqa: E402
+from custom_components.ml_pv_forecast.core.pipeline import train_plant  # noqa: E402
+from custom_components.ml_pv_forecast.core.weather import OpenMeteoClient  # noqa: E402
 
 DAY = 86400
 

@@ -157,6 +157,12 @@ function dayWeather(hourly, dayStart) {
 }
 
 // Small grey weather symbols along the top of a chart, every `step` hours within [from, to).
+// Hours between weather symbols so they keep ~26 px apart at the given chart width.
+function weatherStep(widthPx, hours) {
+  const pxPerHour = Math.max(120, widthPx - 70) / hours;
+  return [1, 2, 3, 4, 6, 8, 12, 24].find((s) => s * pxPerHour >= 26) ?? 24;
+}
+
 function weatherMarks(hourly, from, to, step, offsetY = -2) {
   return (hourly || [])
     .filter((r) => {
@@ -328,7 +334,7 @@ class MlPvForecastCard extends HTMLElement {
     }
     // Rebuild the charts when the view, the day or the shown hours change (once an hour at most).
     const specs = this._specs(entityId, state, t);
-    const key = `${entityId}|${this._view}|${this._reviewIndex}|${specs.map((s) => s.key).join(",")}`;
+    const key = `${entityId}|${this._view}|${this._reviewIndex}|${this._cardWidth() < 500}|${weatherStep(this._cardWidth(), 24)}|${specs.map((s) => s.key).join(",")}`;
     if (this._chartsKey !== key) {
       this._chartsKey = key;
       this._charts = [];
@@ -372,7 +378,7 @@ class MlPvForecastCard extends HTMLElement {
       .title { font-size: 1.15em; font-weight: 500; margin-bottom: 8px; }
       .tabs { display: flex; border: 1px solid var(--divider-color); border-radius: 8px; overflow: hidden; }
       .tab { flex: 1 1 0; min-width: 0; border: none; border-left: 1px solid var(--divider-color);
-             background: none; color: var(--secondary-text-color); padding: 6px 4px; font-size: 0.85em;
+             background: none; color: var(--secondary-text-color); padding: 6px 2px; font-size: 0.8em;
              cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .tab:first-child { border-left: none; }
       .tab.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
@@ -423,7 +429,10 @@ class MlPvForecastCard extends HTMLElement {
       if (!width || width === this._width) return;
       this._width = width;
       clearTimeout(this._resizeTimer);
-      this._resizeTimer = setTimeout(() => window.dispatchEvent(new Event("resize")), 100);
+      this._resizeTimer = setTimeout(() => {
+        this._render(); // symbol spacing and day names depend on the width
+        window.dispatchEvent(new Event("resize"));
+      }, 100);
     }).observe(this._card);
     this._header.addEventListener("click", (ev) => {
       const target = ev.target.closest("[data-view],[data-shift],[data-day]");
@@ -761,7 +770,12 @@ class MlPvForecastCard extends HTMLElement {
         series,
       });
       config.apex_config.annotations = {
-        xaxis: weatherMarks(a.hourly, dayStart + from * HOUR, dayStart + to * HOUR, 2),
+        xaxis: weatherMarks(
+          a.hourly,
+          dayStart + from * HOUR,
+          dayStart + to * HOUR,
+          weatherStep(this._cardWidth(), to - from)
+        ),
       };
       specs.push({
         key: `${from}-${to}`,
@@ -785,15 +799,15 @@ MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
   };
   const parts = [
     `${t.today}${weather(0)} <b>${this._kwh(daily.today)}</b> <span class="sub">(${t.sofar} ${this._kwh(actualKwh)})</span>`,
-    `${t.tomorrow}${weather(1)} <b>${this._kwh(daily.tomorrow)}</b>`,
-    `${t.dayAfter}${weather(2)} <b>${this._kwh(daily.day_after_tomorrow)}</b>`,
+    `${this._dayName(1, t)}${weather(1)} <b>${this._kwh(daily.tomorrow)}</b>`,
+    `${this._dayName(2, t)}${weather(2)} <b>${this._kwh(daily.day_after_tomorrow)}</b>`,
   ].slice(0, this._config.days);
-  const marks = [t.tomorrow, t.dayAfter].slice(0, this._config.days - 1).map((label, i) => ({
+  const marks = [1, 2].slice(0, this._config.days - 1).map((d, i) => ({
     x: localMidnight(i + 1),
     borderColor: "#9E9E9E",
     strokeDashArray: 0,
     label: {
-      text: label,
+      text: this._dayName(i + 1, t),
       orientation: "horizontal",
       position: "top",
       textAnchor: "start",
@@ -827,7 +841,13 @@ MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
   });
   const daylight = (a.hourly || []).filter((r) => r.p50 > 0);
   // one row below the day labels, so they never overlap
-  const weatherAnnotations = weatherMarks(daylight, localMidnight(), localMidnight(this._config.days), 3, 16);
+  const weatherAnnotations = weatherMarks(
+    daylight,
+    localMidnight(),
+    localMidnight(this._config.days),
+    weatherStep(this._cardWidth(), this._config.days * 24),
+    16
+  );
   config.apex_config.annotations = { xaxis: [...marks, ...weatherAnnotations] };
   config.apex_config.xaxis = {
     labels: { datetimeUTC: false, format: "HH:mm" },
@@ -840,6 +860,18 @@ MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
   };
 };
 
+MlPvForecastCard.prototype._cardWidth = function () {
+  return this._width || this.clientWidth || 800;
+};
+
+// Narrow cards: weekday names ("Tue") instead of "Tomorrow" / "Day after tomorrow".
+MlPvForecastCard.prototype._dayName = function (offset, t) {
+  if (offset === 0) return t.today;
+  if (this._cardWidth() >= 500) return [t.tomorrow, t.dayAfter][offset - 1];
+  const day = new Date(localMidnight(offset));
+  return day.toLocaleDateString(this._lang(), { weekday: "short" });
+};
+
 MlPvForecastCard.prototype._plantStates = function () {
   return Object.values(this._hass.states)
     .filter((s) => isForecastCurve(s) && s.attributes.plant)
@@ -847,7 +879,7 @@ MlPvForecastCard.prototype._plantStates = function () {
 };
 
 MlPvForecastCard.prototype._plantsTable = function (t) {
-  const days = [t.today, t.tomorrow, t.dayAfter].slice(0, this._config.days);
+  const days = [0, 1, 2].slice(0, this._config.days).map((d) => this._dayName(d, t));
   const keys = ["today", "tomorrow", "day_after_tomorrow"];
   const rows = this._plantStates().map((p, i) => {
     const daily = p.attributes.daily || {};
@@ -873,12 +905,12 @@ MlPvForecastCard.prototype._plantsSpec = function (t) {
   plants.forEach((p) =>
     hourly(p).forEach((r) => (totals[r.time] = (totals[r.time] || 0) + r.p50 / 1000))
   );
-  const marks = [t.tomorrow, t.dayAfter].slice(0, this._config.days - 1).map((label, i) => ({
+  const marks = [1, 2].slice(0, this._config.days - 1).map((d, i) => ({
     x: localMidnight(i + 1),
     borderColor: "#9E9E9E",
     strokeDashArray: 0,
     label: {
-      text: label,
+      text: this._dayName(i + 1, t),
       orientation: "horizontal",
       position: "top",
       textAnchor: "start",
@@ -918,7 +950,13 @@ MlPvForecastCard.prototype._plantsSpec = function (t) {
   };
   const daylight = hourly(plants[0]).filter((r) => r.p50 > 0);
   config.apex_config.annotations = {
-    xaxis: [...marks, ...weatherMarks(daylight, localMidnight(), localMidnight(this._config.days), 3, 16)],
+    xaxis: [...marks, ...weatherMarks(
+    daylight,
+    localMidnight(),
+    localMidnight(this._config.days),
+    weatherStep(this._cardWidth(), this._config.days * 24),
+    16
+  )],
   };
   config.apex_config.xaxis = {
     labels: { datetimeUTC: false, format: "HH:mm" },

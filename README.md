@@ -245,6 +245,10 @@ data:
 
 ## Troubleshooting
 
+After updating, reload the dashboard once (browser: Ctrl/Cmd + Shift + R; app: ⋮ → *Reload*).
+A page that stayed open while Home Assistant restarted still runs the old card and may show
+*Configuration error*.
+
 Problems appear under *Settings → Repairs*:
 
 - **Open-Meteo unreachable**: no new weather data for more than 3 hours. The last forecast is used

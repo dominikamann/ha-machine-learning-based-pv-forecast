@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2 – 2026-10-12
+
+- Card on narrow screens: weather symbols spaced by the available width, weekday names instead of
+  "Tomorrow" / "Day after tomorrow", tab names fit.
+- README: reload the dashboard after an update.
+
 ## 0.5.1 – 2026-10-12
 
 - Card: the Plants view now really stacks the plants (each band sits on the plants before it;

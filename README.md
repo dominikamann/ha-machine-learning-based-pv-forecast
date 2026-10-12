@@ -161,3 +161,7 @@ redacted) for bug reports.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+---
+
+<p align="center">Proudly provided by <a href="https://amannlabs.eu">amannlabs.eu</a></p>

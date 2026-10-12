@@ -57,3 +57,21 @@ def test_configured_limit_excludes_rows_near_limit():
 
 def test_no_production_gives_zero_capacity():
     assert effective_capacity(np.arange(5), np.full(5, np.nan), 10) == 0.0
+
+
+def test_snow_covered_sunny_hours_are_kept_for_training():
+    from dataclasses import replace
+
+    from custom_components.ml_pv_forecast.core.features import build_features
+    from tests.synthetic import LAT, LON
+
+    w = synthetic_weather(START_2024 + 20 * 86400, 10 * 24)
+    w = replace(w, snow_depth=np.full(len(w), 0.2))
+    X = build_features(w, LAT, LON)
+    y = synthetic_production(w)
+    cap = effective_capacity(w.times, y, int(w.times[-1]))
+    sunny = (np.nan_to_num(X[:, col("clearsky_index")]) > 0.7) & (X[:, col("sun_elevation")] > 10)
+    covered = y.copy()
+    covered[sunny] = 0.0  # panels under snow
+    ok = usable_mask(w.times, covered, X, cap)
+    assert ok[sunny].all()

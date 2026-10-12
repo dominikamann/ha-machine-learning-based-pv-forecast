@@ -216,3 +216,11 @@ async def test_cache_is_shared_between_different_start_dates(tmp_path):
     first = len(session.calls)
     await client.history(date(2023, 2, 20), date(2024, 6, 30), today)
     assert len(session.calls) == first  # a plant starting later reuses every cached chunk
+
+
+def test_weather_code_is_parsed_when_present():
+    payload = {"hourly": {**multi_block([7200]), "weather_code_best_match": [61]}}
+    w = parse_block(payload, "hourly", HOUR, False, suffix="")
+    assert w.weather_code.tolist() == [61.0]
+    plain = parse_block({"hourly": block([7200])}, "hourly", HOUR, False)
+    assert np.isnan(plain.weather_code).all()

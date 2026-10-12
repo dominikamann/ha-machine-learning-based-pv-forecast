@@ -221,6 +221,10 @@ class CurveSensor(ForecastEntity):
             return round(float(fc.energy(start, end)[1]) / 1000, 2)
 
         return {
+            # lets the dashboard card find every plant's curve
+            "plant": None
+            if self._plant_id == TOTAL
+            else self.coordinator.plants[self._plant_id].name,
             "daily": {
                 "today": kwh(w.today, w.tomorrow),
                 "tomorrow": kwh(w.tomorrow, w.day_after),
@@ -239,7 +243,10 @@ class CurveSensor(ForecastEntity):
                 }
                 for day in self.coordinator.review.get(self._plant_id, [])
             ],
-            "hourly": rows(fc.hour_times, fc.hourly, w.today, w.day_after_end, 1.0),
+            "hourly": [
+                {**row, **self.coordinator.hour_weather(row["time"])}
+                for row in rows(fc.hour_times, fc.hourly, w.today, w.day_after_end, 1.0)
+            ],
             "quarters": rows(fc.quarter_times, fc.quarter, w.today, w.now + 86400, 4.0),
             "morning": [
                 {

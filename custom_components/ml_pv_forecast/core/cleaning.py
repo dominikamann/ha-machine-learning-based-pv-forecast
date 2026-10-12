@@ -67,7 +67,10 @@ def usable_mask(
             & (production >= 0)
             & (production <= 1.5 * capacity)
         )
-        ok &= ~((production < 0.02 * capacity) & (clearsky_index > 0.5))
+        # Sun but no production is an outage – unless snow covers the panels: keep those hours so
+        # the model learns what snow does.
+        snow = np.nan_to_num(X[:, col("snow_depth")]) > 0
+        ok &= ~((production < 0.02 * capacity) & (clearsky_index > 0.5) & ~snow)
         if limit_wh:
             ok &= production < 0.97 * limit_wh
     ok &= ~plateau_mask(times, production, X)

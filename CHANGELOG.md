@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 – 2026-10-12
+
+- Card: the weather in a subtle way – prevailing weather and highest temperature next to each day,
+  small monochrome weather symbols (sun, clouds, rain, snow, fog, thunder) along the top of the
+  charts. The forecast curve's hourly rows carry the WMO weather code (`wc`) and temperature (`t`).
+- Snow: sunny hours with snow on the ground are no longer discarded as outages, so the model learns
+  how snow on the panels lowers production.
+- README images load in HACS too (absolute URLs).
+- Card: new **Plants** view – the next days per plant, stacked, with a table of daily energy per
+  plant and in total. The forecast curve names its plant (`plant` attribute).
+- README: evcc example with `interval: 15m`, so evcc picks up the 15-minute updates.
+- Card: charts always fit the card width, also when a dashboard column becomes narrower after
+  loading (phones).
+
 ## 0.4.2 – 2026-10-12
 
 - Fix: the card sometimes showed "Custom element doesn't exist: ml-pv-forecast-card". It loaded

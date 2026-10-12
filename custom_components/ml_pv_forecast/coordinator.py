@@ -248,6 +248,21 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
     def _model_path(self, plant_id: str) -> Path:
         return self.base_dir / "models" / f"{plant_id}.pkl"
 
+    def hour_weather(self, iso_time: str) -> dict:
+        """Weather code (WMO) and temperature for one forecast hour, for display."""
+        if self._weather is None:
+            return {"wc": None, "t": None}
+        hourly = self._weather[0]
+        start = int(dt_util.parse_datetime(iso_time).timestamp())
+        i = int(np.searchsorted(hourly.times, start))
+        if i >= len(hourly.times) or hourly.times[i] != start:
+            return {"wc": None, "t": None}
+        code, temp = hourly.weather_code[i], hourly.temperature[i]
+        return {
+            "wc": int(code) if np.isfinite(code) else None,
+            "t": round(float(temp), 1) if np.isfinite(temp) else None,
+        }
+
     def capacity(self, plant_id: str) -> float:
         if plant_id == TOTAL:
             return sum(p.model.capacity for p in self.plants.values() if p.model is not None)

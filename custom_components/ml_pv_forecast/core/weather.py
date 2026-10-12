@@ -81,6 +81,7 @@ class WeatherData:
     ens_dhi: np.ndarray | None = None
     ens_cloud: np.ndarray | None = None
     lead_days: np.ndarray | None = None  # 0 = same-day forecast, 1 = issued a day ahead, ...
+    weather_code: np.ndarray | None = None  # WMO code, display only (not a model input)
 
     def __post_init__(self) -> None:
         n = len(self.times)
@@ -89,6 +90,8 @@ class WeatherData:
                 object.__setattr__(self, name, np.full((n, len(ENSEMBLE_MODELS)), np.nan))
         if self.lead_days is None:
             object.__setattr__(self, "lead_days", np.zeros(n))
+        if self.weather_code is None:
+            object.__setattr__(self, "weather_code", np.full(n, np.nan))
 
     def __len__(self) -> int:
         return len(self.times)
@@ -161,11 +164,13 @@ def parse_block(
             columns[name] = np.column_stack(
                 [_values(data.get(f"{api}{suffix}_{model}"), n) for model in ENSEMBLE_MODELS]
             )
+    code_key = f"weather_code{suffix}_best_match" if multi else "weather_code"
     return WeatherData(
         times=times,
         interval=interval,
         is_reanalysis=np.full(n, float(is_reanalysis)),
         lead_days=np.full(n, float(lead)),
+        weather_code=_values(data.get(code_key), n),
         **columns,
     )
 
@@ -226,7 +231,7 @@ class OpenMeteoClient:
         hourly = await self._get(
             FORECAST_URL,
             self._params(
-                hourly=",".join(HOURLY_REQUEST),
+                hourly=",".join([*HOURLY_REQUEST, "weather_code"]),
                 models=",".join(REQUEST_MODELS),
                 past_days="1",
                 forecast_days="4",

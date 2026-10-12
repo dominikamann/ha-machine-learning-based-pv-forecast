@@ -13,7 +13,7 @@ neighbour's roof, a balcony plant: the model learns what your plant actually doe
 datasheet says it should do.
 
 <p align="center">
-  <img src="images/overview.png" alt="PV forecast card: actual production and forecast for today and the next two days" width="720">
+  <img src="https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/overview.png" alt="PV forecast card: actual production and forecast for today and the next two days" width="720">
 </p>
 
 ## Features
@@ -133,12 +133,17 @@ tariffs:
   solar:
     - type: custom
       tariff: solar
+      interval: 15m   # evcc fetches custom sources hourly by default
       forecast:
         source: http
         uri: http://homeassistant.local:8123/api/ml_pv_forecast/evcc
         headers:
           - Authorization: Bearer YOUR_LONG_LIVED_ACCESS_TOKEN
 ```
+
+The forecast is recalculated every 15 minutes, and the next hours follow the live production (if
+the plant is producing 20 % less than forecast right now, the next half hour is corrected and the
+correction fades over the following hours). `interval: 15m` makes evcc pick these updates up.
 
 Optional query parameters: `?plant=<plant id>` for a single plant and `?quantile=p10|p50|p90`
 (default `p50`; `p10` plans conservatively). The endpoint can be switched off in the integration
@@ -153,7 +158,7 @@ The integration ships its own card. It needs
 type: custom:ml-pv-forecast-card
 # all optional:
 # entity: sensor.pv_forecast_total_forecast_curve   # default: the total, found automatically
-# view: overview                         # start view: overview | carousel | today | review
+# view: overview                # start view: overview | carousel | today | plants | review
 # layout: stacked                                    # overview: stacked (one chart per day) | timeline
 # interval: 10                                       # carousel: seconds per day
 # tabs: true                                         # false: show only the start view
@@ -161,24 +166,27 @@ type: custom:ml-pv-forecast-card
 # title: PV                                          # no title unless set
 ```
 
-Four views, switched with the tabs at the top of the card:
+Five views, switched with the tabs at the top of the card:
 
 - **Overview** – one chart per day, covering only the hours with sun: hourly bars of the actual
   production (green), the live forecast (blue) with its P10–P90 range and this morning's forecast
-  (violet, dashed), with the day's totals above each chart. All days share one kW scale.
+  (violet, dashed), with the day's totals, the prevailing weather and the highest temperature
+  above each chart, and small weather symbols along the top. All days share one kW scale.
   `layout: timeline` shows all days in one continuous chart instead.
 - **Day by day** (`carousel`) – today, tomorrow and the day after one at a time, full width,
   switching automatically every `interval` seconds; the dots jump to a day.
 - **Rest of today** – what is still to come today in 15-minute steps: expected energy with range,
   the strongest hour and when production ends.
+- **Plants** – the next days per plant as stacked areas (their top edge is the total), with a
+  table of each plant's and the total daily energy.
 - **Review** – step back through the last 7 days with ‹ ›: this morning's forecast against the
   actual production, the hit rate and how many hours were inside the range.
 
 | Overview, one chart per day | `layout: timeline`, all days in one chart |
 |---|---|
-| ![Overview](images/overview.png) | ![Timeline](images/timeline.png) |
+| ![Overview](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/overview.png) | ![Timeline](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/timeline.png) |
 | **Days** – one day at a time, rotating | **On a phone** |
-| ![Days](images/days.png) | ![Phone](images/overview-mobile.png) |
+| ![Days](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/days.png) | ![Phone](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/overview-mobile.png) |
 
 Want separate cards instead? Use one card per view with `view:` and `tabs: false`. The card is
 also in the card picker as **PV Forecast**. Actual production of the last 10 days is taken from

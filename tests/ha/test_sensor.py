@@ -248,3 +248,27 @@ async def test_states_and_attributes_contain_no_numpy_types(recorder_mock, hass,
         walk(obj.native_value, f"{entity.entity_id}.native_value")
         walk(obj.extra_state_attributes, f"{entity.entity_id}.attributes")
     assert offenders == []
+
+
+async def test_hourly_curve_carries_weather_code_and_temperature(recorder_mock, hass, open_meteo):
+    from dataclasses import replace
+
+    hourly, quarter = await open_meteo.forecast.side_effect()
+    coded = replace(hourly, weather_code=np.full(len(hourly), 3.0))
+    open_meteo.forecast.side_effect = lambda: _value((coded, quarter))
+    entry = await setup_plant(hass, open_meteo)
+    row = hass.states.get(_entity(hass, entry, "total_curve")).attributes["hourly"][12]
+    assert row["wc"] == 3
+    assert isinstance(row["t"], float)
+
+
+async def _value(v):
+    return v
+
+
+async def test_curve_names_its_plant(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    plant_id = next(iter(entry.runtime_data.plants))
+    plant = hass.states.get(_entity(hass, entry, f"{plant_id}_curve")).attributes
+    total = hass.states.get(_entity(hass, entry, "total_curve")).attributes
+    assert plant["plant"] == "Roof" and total["plant"] is None

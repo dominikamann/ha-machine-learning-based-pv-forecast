@@ -26,6 +26,7 @@ const TEXT = {
     todayTab: "Today",
     plants: "Plants",
     total: "Total",
+    barsHint: "lines: actual · areas: forecast",
     noPlants: "No plants found.",
     review: "Review",
     actual: "Actual",
@@ -54,6 +55,7 @@ const TEXT = {
     todayTab: "Heute",
     plants: "Anlagen",
     total: "Gesamt",
+    barsHint: "Linien: tatsächlich · Flächen: Prognose",
     noPlants: "Keine Anlagen gefunden.",
     review: "Rückblick",
     actual: "Tatsächlich",
@@ -82,6 +84,8 @@ const TEXT = {
 const COLORS = { forecast: "#29B6F6", band: "#81D4FA", actual: "#66BB6A", morning: "#B39DDB" };
 const VIEWS = ["overview", "carousel", "today", "plants", "review"];
 const PLANT_COLORS = ["#29B6F6", "#FFCA28", "#AB47BC", "#26A69A", "#EF5350", "#8D6E63"];
+// Lighter shades of the plant colours for the actual-production lines drawn over the areas.
+const PLANT_LIGHT = ["#E1F5FE", "#FFF8E1", "#F3E5F5", "#E0F2F1", "#FFEBEE", "#EFEBE9"];
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 // Hide the inner apexcharts card frame so the charts sit flush inside this card.
@@ -121,6 +125,21 @@ const GEN = {
       });
     }
     return Object.entries(sums).map(([t, v]) => [Number(t), v]).sort((a, b) => a[0] - b[0]);`,
+  // Hourly actual power summed over `ids`, on the hours any of `allIds` has data (aligned series).
+  stackedActual: (ids, allIds) => `
+    const add = (id, into) => (hass.states[id]?.attributes.actual || []).forEach(r => {
+      const t = new Date(r.time); t.setMinutes(0, 0, 0);
+      (into[t.getTime()] ??= []).push(r.w);
+    });
+    const all = {};
+    for (const id of ${JSON.stringify(allIds)}) add(id, all);
+    const sums = {};
+    for (const id of ${JSON.stringify(ids)}) {
+      const own = {};
+      add(id, own);
+      for (const [t, v] of Object.entries(own)) sums[t] = (sums[t] || 0) + v.reduce((a, b) => a + b, 0) / v.length / 1000;
+    }
+    return Object.keys(all).map(t => [Number(t), sums[t] || 0]).sort((a, b) => a[0] - b[0]);`,
   review: (index, key) => `
     const day = (entity.attributes.review || [])[${index}];
     if (!day) return [];
@@ -404,6 +423,7 @@ class MlPvForecastCard extends HTMLElement {
                 font-size: 0.8em; color: var(--secondary-text-color); padding: 0 12px; }
       .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px;
                              border-radius: 2px; margin-right: 6px; background: var(--c); }
+      .legend span.plain::before { display: none; }
       .legend span.dash::before { height: 0; border-top: 2px dashed var(--c); background: none;
                                   vertical-align: middle; }
       .message { padding: 16px; color: var(--secondary-text-color); }
@@ -473,9 +493,10 @@ class MlPvForecastCard extends HTMLElement {
       return (this._dayIndex === 0 ? items.overview : items.today).join("");
     }
     if (this._view === "plants") {
-      return this._plantStates()
+      const plants = this._plantStates()
         .map((p, i) => item(p.attributes.plant, PLANT_COLORS[i % PLANT_COLORS.length]))
         .join("");
+      return `${plants}<span class="plain">${t.barsHint}</span>`;
     }
     return items[this._view].join("");
   }
@@ -769,12 +790,14 @@ class MlPvForecastCard extends HTMLElement {
         now: i === 0,
         series,
       });
+      config.apex_config.grid.padding.top = 22;
       config.apex_config.annotations = {
         xaxis: weatherMarks(
           a.hourly,
           dayStart + from * HOUR,
           dayStart + to * HOUR,
-          weatherStep(this._cardWidth(), to - from)
+          weatherStep(this._cardWidth(), to - from),
+          -22 // above the top grid line, in the padding strip below
         ),
       };
       specs.push({
@@ -881,9 +904,15 @@ MlPvForecastCard.prototype._plantStates = function () {
 MlPvForecastCard.prototype._plantsTable = function (t) {
   const days = [0, 1, 2].slice(0, this._config.days).map((d) => this._dayName(d, t));
   const keys = ["today", "tomorrow", "day_after_tomorrow"];
+  // Today: forecast and, in brackets, the actual production so far.
+  const actualKwh = (s) => (s.attributes.actual || []).reduce((sum, r) => sum + r.w, 0) / 4 / 1000;
+  const sofar = (s) =>
+    ` <span class="sub">(${actualKwh(s).toLocaleString(this._lang(), { maximumFractionDigits: 1 })})</span>`;
   const rows = this._plantStates().map((p, i) => {
     const daily = p.attributes.daily || {};
-    const cells = days.map((_, d) => `<td>${this._kwh(daily[keys[d]])}</td>`).join("");
+    const cells = days
+      .map((_, d) => `<td>${this._kwh(daily[keys[d]])}${d === 0 ? sofar(p) : ""}</td>`)
+      .join("");
     return `<tr><td style="--c:${PLANT_COLORS[i % PLANT_COLORS.length]}">${p.attributes.plant}</td>${cells}</tr>`;
   });
   const total = Object.values(this._hass.states).find(
@@ -891,7 +920,9 @@ MlPvForecastCard.prototype._plantsTable = function (t) {
   );
   if (total && rows.length > 1) {
     const daily = total.attributes.daily || {};
-    const cells = days.map((_, d) => `<td><b>${this._kwh(daily[keys[d]])}</b></td>`).join("");
+    const cells = days
+      .map((_, d) => `<td><b>${this._kwh(daily[keys[d]])}</b>${d === 0 ? sofar(total) : ""}</td>`)
+      .join("");
     rows.push(`<tr class="total"><td style="--c:transparent"><b>${t.total}</b></td>${cells}</tr>`);
   }
   return `<table class="plants"><tr><th></th>${days.map((d) => `<th>${d}</th>`).join("")}</tr>${rows.join("")}</table>`;
@@ -900,6 +931,7 @@ MlPvForecastCard.prototype._plantsTable = function (t) {
 MlPvForecastCard.prototype._plantsSpec = function (t) {
   // The next days per plant, stacked, in one continuous chart.
   const plants = this._plantStates();
+  const ids = plants.map((p) => p.entity_id);
   const hourly = (s) => s.attributes.hourly || [];
   const totals = {};
   plants.forEach((p) =>
@@ -930,22 +962,35 @@ MlPvForecastCard.prototype._plantsSpec = function (t) {
     height: 260,
     // Stacked by hand: series i shows the sum of plants 0..i. Drawn from the largest sum down, so
     // each plant's band sits on top of the ones before it.
-    series: plants
-      .map((p, i) =>
-        this._series(p.entity_id, p.attributes.plant, PLANT_COLORS[i % PLANT_COLORS.length], GEN.stacked(plants.slice(0, i + 1).map((q) => q.entity_id)), {
-          type: "area",
-          opacity: 0.85,
-          stroke_width: 1,
-        })
-      )
-      .reverse(),
+    // Forecast as areas, today's actual production as light step lines, both stacked by plant.
+    // (Bars of several series would be drawn side by side, not on top of each other.)
+    series: [
+      ...plants
+        .map((p, i) =>
+          this._series(p.entity_id, p.attributes.plant, PLANT_COLORS[i % PLANT_COLORS.length], GEN.stacked(ids.slice(0, i + 1)), {
+            type: "area",
+            opacity: 0.85,
+            stroke_width: 1,
+          })
+        )
+        .reverse(),
+      ...plants
+        .map((p, i) =>
+          this._series(p.entity_id, `${p.attributes.plant} (${t.actual})`, PLANT_LIGHT[i % PLANT_LIGHT.length], GEN.stackedActual(ids.slice(0, i + 1), ids), {
+            type: "line",
+            curve: "stepline",
+            stroke_width: 2.5,
+          })
+        )
+        .reverse(),
+    ],
   });
-  // The tooltip shows each plant's own power: its sum minus the sum below it (next series).
+  // The tooltip shows each plant's own power: its sum minus the sum below it, which is the next
+  // series within the same group (forecast areas first, then actual bars, n series each).
   config.apex_config.tooltip = {
     x: { format: "ddd HH:mm" },
     y: {
-      formatter:
-        "EVAL:function(value, { seriesIndex, dataPointIndex, w }) { const below = w.globals.series[seriesIndex + 1]; const own = value - (below ? below[dataPointIndex] || 0 : 0); return own.toFixed(2) + ' kW'; }",
+      formatter: `EVAL:function(value, { seriesIndex, dataPointIndex, w }) { const n = ${plants.length}; const below = seriesIndex % n < n - 1 ? w.globals.series[seriesIndex + 1] : null; const own = value - (below ? below[dataPointIndex] || 0 : 0); return own.toFixed(2) + ' kW'; }`,
     },
   };
   const daylight = hourly(plants[0]).filter((r) => r.p50 > 0);

@@ -177,8 +177,9 @@ Five views, switched with the tabs at the top of the card:
   switching automatically every `interval` seconds; the dots jump to a day.
 - **Rest of today** – what is still to come today in 15-minute steps: expected energy with range,
   the strongest hour and when production ends.
-- **Plants** – the next days per plant as stacked areas (their top edge is the total), with a
-  table of each plant's and the total daily energy.
+- **Plants** – the next days per plant as stacked areas (their top edge is the total) and today's
+  actual production per plant as light lines on top, with a table of each plant's and the total
+  daily energy (today with the actual production so far in brackets).
 - **Review** – step back through the last 7 days with ‹ ›: this morning's forecast against the
   actual production, the hit rate and how many hours were inside the range.
 

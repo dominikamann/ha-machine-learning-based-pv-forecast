@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.3 – 2026-10-12
+
+- Card, Plants view: today's actual production per plant as light lines over the forecast areas,
+  and the actual energy so far next to today's forecast in the table.
+- Card: weather symbols sit above the top grid line instead of on it.
+
 ## 0.5.2 – 2026-10-12
 
 - Card on narrow screens: weather symbols spaced by the available width, weekday names instead of

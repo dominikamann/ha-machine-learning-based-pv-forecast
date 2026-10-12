@@ -51,3 +51,43 @@ async def test_no_training_starts_while_setup_is_retrying(recorder_mock, hass, o
         entry = await setup_plant(hass, open_meteo)
     assert entry.state is ConfigEntryState.SETUP_RETRY
     train.assert_not_called()
+
+
+async def test_plant_added_during_setup_is_picked_up(recorder_mock, hass, open_meteo):
+    import asyncio
+
+    from homeassistant.config_entries import ConfigSubentry
+
+    release = asyncio.Event()
+    weather = open_meteo.forecast.side_effect
+
+    async def slow_forecast():
+        await release.wait()
+        return await weather()
+
+    open_meteo.forecast.side_effect = slow_forecast
+    hass.states.async_set(
+        "sensor.balcony", "0", {"unit_of_measurement": "W", "state_class": "measurement"}
+    )
+    setup = hass.async_create_task(setup_plant(hass, open_meteo))
+    try:
+        async with asyncio.timeout(30):  # wait until setup blocks on the first weather fetch
+            while not open_meteo.forecast.called:
+                await asyncio.sleep(0.05)
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        assert entry.state is ConfigEntryState.SETUP_IN_PROGRESS
+        hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data={"name": "Balcony", "entities": ["sensor.balcony"]},
+                subentry_type="plant",
+                title="Balcony",
+                unique_id=None,
+            ),
+        )
+    finally:
+        release.set()
+    entry = await setup
+    await hass.async_block_till_done(wait_background_tasks=True)
+    names = {p.name for p in entry.runtime_data.plants.values()}
+    assert names == {"Roof", "Balcony"}

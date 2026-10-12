@@ -59,7 +59,7 @@
       "accuracy_1h": { "name": "Genauigkeit 1 Stunde" },
       "accuracy_6h": { "name": "Genauigkeit 6 Stunden" },
       "accuracy_today_morning": { "name": "Genauigkeit heute (Morgenprognose)" },
-      "accuracy_day_ahead": { "name": "Genauigkeit Vortag" },
+      "accuracy_day_ahead": { "name": "Genauigkeit Vortagesprognose" },
       "status": {
         "name": "Modellstatus",
         "state": { "learning": "Lernt", "ready": "Bereit", "error": "Fehler" }

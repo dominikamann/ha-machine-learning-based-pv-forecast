@@ -28,3 +28,16 @@ async def test_sensors_created_with_values(recorder_mock, hass, open_meteo):
     assert "p10" in state.attributes and "p90" in state.attributes
     curve = next(e for e in entities if e.unique_id.endswith("total_curve"))
     assert len(hass.states.get(curve.entity_id).attributes["hourly"]) > 24
+
+
+async def test_accuracy_without_data_is_unknown_not_unavailable(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    registry = er.async_get(hass)
+    accuracy = next(
+        e
+        for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        if e.unique_id.endswith("total_accuracy_day_ahead")
+    )
+    state = hass.states.get(accuracy.entity_id)
+    assert state.state == "unknown"
+    assert state.attributes["status"] == "collecting"

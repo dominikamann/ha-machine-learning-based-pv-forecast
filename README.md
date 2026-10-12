@@ -91,7 +91,9 @@ Per plant and for the total:
 | Accuracy 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count` |
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
 
-Accuracy is the mean absolute error over the last 30 days as a percentage of actual production
+Accuracy sensors stay *unknown* (attribute `status: collecting`) until the nightly evaluation at
+02:30 has archived forecasts to compare: the short horizons after the first night, the day horizons
+after one to two days. Accuracy is the mean absolute error over the last 30 days as a percentage of actual production
 (lower is better). `skill` compares with simply repeating the previous period (above 0 is better
 than that).
 

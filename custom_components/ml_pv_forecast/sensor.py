@@ -220,12 +220,8 @@ class AccuracySensor(ForecastEntity):
         return self.coordinator.metrics.get(self._plant_id, {}).get(self._horizon)
 
     @property
-    def available(self) -> bool:
-        m = self._metrics()
-        return super().available and m is not None and m.nmae is not None
-
-    @property
     def native_value(self) -> float | None:
+        # Unknown (not unavailable) until the nightly evaluation has archived results to compare.
         m = self._metrics()
         return round(m.nmae, 1) if m and m.nmae is not None else None
 
@@ -233,8 +229,9 @@ class AccuracySensor(ForecastEntity):
     def extra_state_attributes(self) -> dict[str, Any] | None:
         m = self._metrics()
         if not m:
-            return None
+            return {"status": "collecting"}
         return {
+            "status": "ready",
             "mae_kwh": round(m.mae / 1000, 3),
             "bias_kwh": round(m.bias / 1000, 3),
             "skill": None if m.skill is None else round(m.skill, 3),

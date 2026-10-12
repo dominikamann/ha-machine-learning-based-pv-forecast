@@ -15,6 +15,8 @@ type MlPvConfigEntry = ConfigEntry[MlPvCoordinator]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: MlPvConfigEntry) -> bool:
+    # Listen before reading the plants: a plant added while setup runs then triggers a reload.
+    entry.async_on_unload(entry.add_update_listener(_async_reload))
     coordinator = MlPvCoordinator(hass, entry)
     try:
         await coordinator.async_config_entry_first_refresh()
@@ -25,7 +27,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MlPvConfigEntry) -> bool
     coordinator.async_start()
     async_register_view(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_async_reload))
     return True
 
 

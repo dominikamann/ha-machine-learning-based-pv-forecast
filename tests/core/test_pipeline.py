@@ -58,3 +58,25 @@ def test_end_to_end_accuracy_on_synthetic_plant():
     first = boosted.quarter[0, 1]
     assert first == pytest.approx(1.5 * fc.quarter[0, 1])
     np.testing.assert_allclose(boosted.quarter_raw, fc.quarter_raw)
+
+
+class HalfCorrection:
+    def factors(self, hour, doy, cloud, p50_norm):
+        return np.full(len(hour), 0.5)
+
+
+def test_model_energy_is_before_correction_and_nowcast():
+    w = synthetic_weather(START_2024, 60 * 24)
+    y = synthetic_production(w)
+    now = int(w.times[-1]) + 3600
+    model = train_plant(w.times, y, w, LAT, LON, now, None, None, "h").model
+    hourly = synthetic_weather(now, 48, seed=5)
+    quarter = synthetic_weather(now, 192, interval=900, seed=5)
+    fc = forecast_plant(
+        "a", model, hourly, quarter, LAT, LON, now, correction=HalfCorrection(), ratio=1.5
+    )
+    end = now + 86400
+    assert fc.model_energy(now, end)[1] > 0
+    assert fc.raw_energy(now, end)[1] == pytest.approx(0.5 * fc.model_energy(now, end)[1])
+    total = total_forecast([fc, fc], now)
+    assert total.model_energy(now, end)[1] == pytest.approx(2 * fc.model_energy(now, end)[1])

@@ -11,7 +11,16 @@ from custom_components.ml_pv_forecast.core.evaluation import (
 DAY = 86400
 
 
-def row(p50, actual, persistence=None, start=0, horizon="day_ahead", issued=None, ratio=None):
+def row(
+    p50,
+    actual,
+    persistence=None,
+    start=0,
+    horizon="day_ahead",
+    issued=None,
+    ratio=None,
+    model_p50=None,
+):
     end = start + (DAY if horizon == "day_ahead" else 3600)
     f = ArchivedForecast(
         "a",
@@ -23,6 +32,7 @@ def row(p50, actual, persistence=None, start=0, horizon="day_ahead", issued=None
         p50,
         p50 * 1.2,
         p50,
+        p50 if model_p50 is None else model_p50,
         ratio,
         50.0,
         1000.0,
@@ -54,10 +64,28 @@ def test_correction_learns_systematic_overestimate():
     ]
     corr = Correction.from_rows(rows, now)
     assert corr is not None
-    f = corr.factors(
-        np.array([1.0]), np.array([12.0]), np.array([100.0]), np.array([50.0]), np.array([0.5])
-    )
+    f = corr.factors(np.array([12.0]), np.array([100.0]), np.array([50.0]), np.array([0.5]))
     assert f[0] == pytest.approx(0.8, abs=0.05)
+
+
+def test_correction_learns_from_uncorrected_model_output():
+    # Archived p50 was already corrected (equals actual); the model itself is 25 % too high.
+    rng = np.random.default_rng(1)
+    rows = [
+        row(0.8 * m, 0.8 * m, start=d * DAY + h * 3600, horizon="1h", model_p50=m)
+        for d in range(60, 120)
+        for h in range(6, 18)
+        for m in [rng.uniform(200, 900)]
+    ]
+    corr = Correction.from_rows(rows, 120 * DAY)
+    assert corr is not None
+    f = corr.factors(np.array([12.0]), np.array([100.0]), np.array([50.0]), np.array([0.5]))
+    assert f[0] == pytest.approx(0.8, abs=0.05)
+
+
+def test_correction_ignores_day_windows():
+    rows = [row(500, 400, start=d * DAY) for d in range(60, 120)]
+    assert Correction.from_rows(rows, 120 * DAY) is None
 
 
 def test_correction_needs_thirty_days():

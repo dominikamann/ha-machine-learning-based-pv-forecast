@@ -80,5 +80,7 @@ def test_quarter_sums_keep_only_complete_quarters():
 
 
 def test_quarter_sums_drop_quarters_with_gaps():
-    t, wh = quarter_sums(np.array([0, 300, 600, 900, 1200, 1500]), np.array([1, np.nan, 1, 1, 1, 1.0]))
+    t, wh = quarter_sums(
+        np.array([0, 300, 600, 900, 1200, 1500]), np.array([1, np.nan, 1, 1, 1, 1.0])
+    )
     assert t.tolist() == [900] and wh.tolist() == [3.0]

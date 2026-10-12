@@ -6,7 +6,7 @@ import json
 import sqlite3
 import threading
 import time
-from dataclasses import astuple, dataclass
+from dataclasses import astuple, dataclass, fields
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS forecasts (
     plant TEXT NOT NULL, horizon TEXT NOT NULL, issued_at INTEGER NOT NULL,
     start INTEGER NOT NULL, end INTEGER NOT NULL,
     p10 REAL NOT NULL, p50 REAL NOT NULL, p90 REAL NOT NULL,
-    raw_p50 REAL NOT NULL, ratio REAL, cloud REAL NOT NULL, capacity REAL NOT NULL,
+    raw_p50 REAL NOT NULL, model_p50 REAL NOT NULL, ratio REAL, cloud REAL NOT NULL, capacity REAL NOT NULL,
     PRIMARY KEY (plant, horizon, issued_at)
 );
 CREATE TABLE IF NOT EXISTS actuals (
@@ -40,10 +40,14 @@ class ArchivedForecast:
     p10: float
     p50: float
     p90: float
-    raw_p50: float
+    raw_p50: float  # after correction, before nowcast
+    model_p50: float  # pure model output, before correction and nowcast
     ratio: float | None
     cloud: float
     capacity: float
+
+
+FORECAST_COLUMNS = [f.name for f in fields(ArchivedForecast)]
 
 
 @dataclass(frozen=True)
@@ -78,7 +82,9 @@ class Archive:
         db = sqlite3.connect(self._path, check_same_thread=False)
         try:
             db.executescript(SCHEMA)
-            db.execute("SELECT count(*) FROM forecasts").fetchone()
+            columns = [row[1] for row in db.execute("PRAGMA table_info(forecasts)")]
+            if columns != FORECAST_COLUMNS:
+                raise sqlite3.DatabaseError("outdated archive schema")
         except sqlite3.DatabaseError:
             db.close()
             raise
@@ -87,7 +93,7 @@ class Archive:
     def add_forecasts(self, rows: list[ArchivedForecast]) -> None:
         with self._lock, self._db:
             self._db.executemany(
-                "INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [astuple(r) for r in rows if _finite(r)],
             )
 

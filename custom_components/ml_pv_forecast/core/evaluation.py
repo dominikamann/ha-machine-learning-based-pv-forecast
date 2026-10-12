@@ -14,6 +14,7 @@ DAY = 86400
 CORRECTION_MIN_DAYS = 30
 VALIDATION_DAYS = 14
 SHORT_HORIZONS = ("30m", "1h", "6h")
+CORRECTION_HORIZON = "1h"
 
 
 @dataclass(frozen=True)
@@ -50,13 +51,12 @@ def compute_metrics(rows: list[EvalRow]) -> Metrics | None:
 
 
 def correction_features(
-    lead_hours: np.ndarray,
     hour: np.ndarray,
     doy: np.ndarray,
     cloud: np.ndarray,
     p50_norm: np.ndarray,
 ) -> np.ndarray:
-    return np.column_stack([lead_hours, hour, doy, cloud, p50_norm])
+    return np.column_stack([hour, doy, cloud, p50_norm])
 
 
 def _row_features(rows: list[EvalRow]) -> np.ndarray:
@@ -64,11 +64,10 @@ def _row_features(rows: list[EvalRow]) -> np.ndarray:
     start = np.array([x.start for x in f], dtype=float)
     hours = np.array([(x.end - x.start) / 3600 for x in f])
     return correction_features(
-        (start - np.array([x.issued_at for x in f])) / 3600,
         (start % DAY) / 3600,
         (start / DAY) % 365.2425,
         np.array([x.cloud for x in f]),
-        np.array([x.p50 for x in f]) / (np.array([x.capacity for x in f]) * hours),
+        np.array([x.model_p50 for x in f]) / (np.array([x.capacity for x in f]) * hours),
     )
 
 
@@ -79,30 +78,33 @@ def _fit(X: np.ndarray, y: np.ndarray) -> HistGradientBoostingRegressor:
 
 
 class Correction:
-    """Learns the ratio actual/P50 from archived forecasts."""
+    """Learns the ratio actual / model P50 from archived hourly windows.
+
+    Trained on the pure model output (before correction and nowcast) and on 1-hour windows, so it
+    is fitted on exactly what it is later applied to: hourly model predictions.
+    """
 
     def __init__(self, estimator: HistGradientBoostingRegressor) -> None:
         self._estimator = estimator
 
     def factors(
         self,
-        lead_hours: np.ndarray,
         hour: np.ndarray,
         doy: np.ndarray,
         cloud: np.ndarray,
         p50_norm: np.ndarray,
     ) -> np.ndarray:
-        X = correction_features(lead_hours, hour, doy, cloud, p50_norm)
+        X = correction_features(hour, doy, cloud, p50_norm)
         return np.clip(self._estimator.predict(X), 0.5, 1.5)
 
     @staticmethod
     def from_rows(rows: list[EvalRow], now: int) -> Correction | None:
-        """A correction that beats the uncorrected forecast on the last 14 days, else None."""
+        """A correction that beats the uncorrected model on the last 14 days, else None."""
         rows = [
             r
             for r in rows
-            if r.forecast.p50
-            > 0.02 * r.forecast.capacity * (r.forecast.end - r.forecast.start) / 3600
+            if r.forecast.horizon == CORRECTION_HORIZON
+            and r.forecast.model_p50 > 0.02 * r.forecast.capacity
         ]
         if not rows:
             return None
@@ -110,7 +112,7 @@ class Correction:
         if start.max() - start.min() < CORRECTION_MIN_DAYS * DAY:
             return None
         X = _row_features(rows)
-        p50 = np.array([r.forecast.p50 for r in rows])
+        p50 = np.array([r.forecast.model_p50 for r in rows])
         actual = np.array([r.actual for r in rows])
         target = np.clip(actual / p50, 0.0, 3.0)
         validation = start >= now - VALIDATION_DAYS * DAY

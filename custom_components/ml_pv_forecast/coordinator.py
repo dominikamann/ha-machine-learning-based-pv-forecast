@@ -314,6 +314,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                         float(p[1]),
                         float(p[2]),
                         float(fc.raw_energy(w_start, w_end)[1]),
+                        float(fc.model_energy(w_start, w_end)[1]),
                         fc.ratio,
                         window_cloud(hourly, w_start, w_end),
                         capacity,

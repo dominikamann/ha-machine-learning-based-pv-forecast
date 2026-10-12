@@ -20,8 +20,9 @@ from tests.synthetic import synthetic_production, synthetic_weather
 
 
 @pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(recorder_mock, enable_custom_integrations):
-    """Recorder must start before hass; every test here needs both."""
+def auto_enable_custom_integrations(recorder_mock, enable_custom_integrations, hass, tmp_path):
+    """Recorder must start before hass; every test gets its own config dir for models/archive."""
+    hass.config.config_dir = str(tmp_path)
     yield
 
 

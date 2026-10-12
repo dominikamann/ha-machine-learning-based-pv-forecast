@@ -36,8 +36,9 @@ class PlantForecast:
     hourly: np.ndarray
     quarter_times: np.ndarray
     quarter: np.ndarray
-    quarter_raw: np.ndarray
+    quarter_raw: np.ndarray  # after correction, before nowcast
     ratio: float | None = None
+    quarter_model: np.ndarray | None = None  # pure model output (defaults to quarter_raw)
 
     def energy(self, start: int, end: int) -> np.ndarray:
         if len(self.quarter_times):
@@ -46,6 +47,10 @@ class PlantForecast:
 
     def raw_energy(self, start: int, end: int) -> np.ndarray:
         return _integrate(self.quarter_times, self.quarter_raw, QUARTER, start, end)
+
+    def model_energy(self, start: int, end: int) -> np.ndarray:
+        values = self.quarter_raw if self.quarter_model is None else self.quarter_model
+        return _integrate(self.quarter_times, values, QUARTER, start, end)
 
     def peak(self, start: int, end: int) -> tuple[float, int] | None:
         mask = (self.quarter_times >= start) & (self.quarter_times < end)
@@ -71,6 +76,13 @@ def total_forecast(forecasts: list[PlantForecast], issued_at: int) -> PlantForec
         quarter_times,
         _aligned_sum(quarter_times, [(f.quarter_times, f.quarter) for f in forecasts]),
         _aligned_sum(quarter_times, [(f.quarter_times, f.quarter_raw) for f in forecasts]),
+        quarter_model=_aligned_sum(
+            quarter_times,
+            [
+                (f.quarter_times, f.quarter_raw if f.quarter_model is None else f.quarter_model)
+                for f in forecasts
+            ],
+        ),
     )
 
 
@@ -113,9 +125,9 @@ def forecast_plant(
 ) -> PlantForecast:
     times = weather_hourly.times
     hourly = model.predict(build_features(weather_hourly, latitude, longitude))
+    quarter_model = to_quarters(times, hourly, weather_quarter.times, weather_quarter.ghi)
     if correction is not None:
         factors = correction.factors(
-            (times - now) / HOUR,
             (times % DAY) / HOUR,
             (times / DAY) % 365.2425,
             cloud_total(weather_hourly),
@@ -126,9 +138,12 @@ def forecast_plant(
     valid = np.isfinite(quarter_raw).all(axis=1)
     quarter_times = weather_quarter.times[valid]
     quarter_raw = quarter_raw[valid]
+    quarter_model = quarter_model[valid]
     quarter = (
         adjust(quarter_raw, (quarter_times - now) / 60, ratio, tau)
         if ratio is not None
         else quarter_raw.copy()
     )
-    return PlantForecast(plant_id, now, times, hourly, quarter_times, quarter, quarter_raw, ratio)
+    return PlantForecast(
+        plant_id, now, times, hourly, quarter_times, quarter, quarter_raw, ratio, quarter_model
+    )

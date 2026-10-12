@@ -8,7 +8,7 @@ from .solar import VIRTUAL_PLANES, clear_sky_ghi, plane_irradiance, sun_position
 from .weather import ENSEMBLE_MODELS, WeatherData
 
 # Bump when the feature set changes: stored models with another version are retrained.
-FEATURE_VERSION = 2
+FEATURE_VERSION = 3
 
 PLANE_FEATURES = [f"plane_{int(tilt)}_{int(azimuth)}" for tilt, azimuth in VIRTUAL_PLANES]
 FEATURE_NAMES = [
@@ -25,6 +25,11 @@ FEATURE_NAMES = [
     "cloud_mid",
     "cloud_high",
     "snow_depth",
+    "humidity",
+    "dew_point_spread",
+    "precipitation",
+    "wind_speed",
+    "visibility",
     "hour_sin",
     "hour_cos",
     "doy_sin",
@@ -76,6 +81,11 @@ def build_features(weather: WeatherData, latitude: float, longitude: float) -> n
         weather.cloud_mid,
         weather.cloud_high,
         weather.snow_depth,
+        weather.humidity,
+        weather.temperature - weather.dew_point,  # near zero: saturated air, fog or haze
+        weather.precipitation,
+        weather.wind_speed,
+        weather.visibility,
         np.sin(2 * np.pi * hour / 24),
         np.cos(2 * np.pi * hour / 24),
         np.sin(2 * np.pi * doy / 365.2425),

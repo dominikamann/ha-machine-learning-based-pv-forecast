@@ -25,7 +25,7 @@ PREVIOUS_RUNS_START = date(2024, 1, 1)
 CHUNK_DAYS = 90
 CHUNK_EPOCH = date(2000, 1, 1)
 LEADS = (0, 1, 2)
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_WAIT = 61  # seconds; Open-Meteo's limit window is one minute
 
@@ -38,7 +38,14 @@ VARIABLES = {
     "cloud_cover_mid": "cloud_mid",
     "cloud_cover_high": "cloud_high",
     "snow_depth": "snow_depth",
+    "relative_humidity_2m": "humidity",
+    "dew_point_2m": "dew_point",
+    "precipitation": "precipitation",
+    "wind_speed_10m": "wind_speed",
+    "visibility": "visibility",  # not archived for previous runs or ERA5: NaN there
 }
+# Added in feature version 3; older caches and payloads lack them, so they default to NaN.
+OPTIONAL_VARIABLES = ("humidity", "dew_point", "precipitation", "wind_speed", "visibility")
 QUARTER_VARIABLES = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation")
 
 # Several weather models give the model a second opinion and a measure of agreement.
@@ -82,6 +89,11 @@ class WeatherData:
     ens_cloud: np.ndarray | None = None
     lead_days: np.ndarray | None = None  # 0 = same-day forecast, 1 = issued a day ahead, ...
     weather_code: np.ndarray | None = None  # WMO code, display only (not a model input)
+    humidity: np.ndarray | None = None  # relative humidity at 2 m, %
+    dew_point: np.ndarray | None = None  # °C
+    precipitation: np.ndarray | None = None  # mm in the hour
+    wind_speed: np.ndarray | None = None  # km/h at 10 m
+    visibility: np.ndarray | None = None  # m
 
     def __post_init__(self) -> None:
         n = len(self.times)
@@ -90,8 +102,9 @@ class WeatherData:
                 object.__setattr__(self, name, np.full((n, len(ENSEMBLE_MODELS)), np.nan))
         if self.lead_days is None:
             object.__setattr__(self, "lead_days", np.zeros(n))
-        if self.weather_code is None:
-            object.__setattr__(self, "weather_code", np.full(n, np.nan))
+        for name in ("weather_code", *OPTIONAL_VARIABLES):
+            if getattr(self, name) is None:
+                object.__setattr__(self, name, np.full(n, np.nan))
 
     def __len__(self) -> int:
         return len(self.times)

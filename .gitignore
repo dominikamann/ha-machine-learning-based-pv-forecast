@@ -1,2 +1,6 @@
 docs/specs/
 docs/plans/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/

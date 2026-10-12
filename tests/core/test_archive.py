@@ -90,7 +90,8 @@ def test_evaluating_a_year_of_rows_is_fast(tmp_path):
     t0 = time.perf_counter()
     rows = ar.evaluated("a", None, 0, 10**9)
     assert len(rows) == n
-    assert time.perf_counter() - t0 < 1.0
+    # Guards against query blow-ups (tens of seconds), not machine speed: CI runners are slower.
+    assert time.perf_counter() - t0 < 5.0
     ar.close()
 
 

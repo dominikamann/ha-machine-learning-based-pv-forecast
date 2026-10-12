@@ -108,6 +108,8 @@ Per plant and for the total:
 | Forecast curve (state: today in kWh) | kWh | `hourly` (72 h, Wh per hour), `quarters` (W), `morning` (this morning's forecast for today, W) |
 | Accuracy 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count` |
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
+| Production now | W | live sum of the plant's sensors (energy meters: rise over the last 5 min) |
+| Production today | kWh | from the 15-minute actuals the forecast is checked against (a few minutes behind) |
 
 Accuracy sensors stay *unknown* (attribute `status: collecting`) until the nightly evaluation at
 02:30 has archived forecasts to compare: the short horizons after the first night, the day horizons

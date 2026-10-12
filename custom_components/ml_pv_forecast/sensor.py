@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -10,14 +11,20 @@ from typing import Any
 import numpy as np
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 
 from .const import DOMAIN, TOTAL
 from .coordinator import MlPvCoordinator
+from .history import EntityProblem, entity_kind
 
 
 @dataclass(frozen=True)
@@ -74,6 +81,8 @@ def _entities(coordinator: MlPvCoordinator, plant_id: str) -> list[SensorEntity]
         CurveSensor(coordinator, plant_id),
         *(AccuracySensor(coordinator, plant_id, h) for h in ACCURACY_HORIZONS),
         StatusSensor(coordinator, plant_id),
+        ActualPowerSensor(coordinator, plant_id),
+        ActualEnergyTodaySensor(coordinator, plant_id),
     ]
 
 
@@ -284,13 +293,127 @@ class StatusSensor(ForecastEntity):
         start, end = (
             (vars(model).get(k, 0) for k in ("history_start", "history_end")) if model else (0, 0)
         )
-        days = round((end - start) / 86400) if start and end else 0
+        days = round((end - start) / 86400) if start and end else None
         return {
             "model": None if model is None else model.kind,
             "last_trained": None if plant.last_trained is None else _iso(plant.last_trained),
             "rows": vars(model).get("rows", plant.rows) if model else plant.rows,
             "history_from": _iso(start) if start else None,
             "history_days": days,
-            "full_year": days >= 365,
+            "full_year": None if days is None else days >= 365,
             "error": plant.error,
         }
+
+
+class PowerFromEnergy:
+    """Average power (W) from an energy meter's rise over the last few minutes."""
+
+    WINDOW = 300  # seconds
+
+    def __init__(self) -> None:
+        self._samples: deque[tuple[float, float]] = deque()
+
+    def update(self, wh: float, now: float) -> float | None:
+        if self._samples and wh < self._samples[-1][1]:
+            self._samples.clear()  # meter reset
+        self._samples.append((now, wh))
+        while len(self._samples) > 2 and self._samples[1][0] <= now - self.WINDOW:
+            self._samples.popleft()
+        start, start_wh = self._samples[0]
+        if len(self._samples) < 2 or now <= start:
+            return None
+        return max((wh - start_wh) / (now - start) * 3600, 0.0)
+
+
+class ActualPowerSensor(ForecastEntity):
+    """Current production, summed live from the plant's (or all plants') source sensors."""
+
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator, plant_id) -> None:
+        super().__init__(coordinator, plant_id, "actual_power")
+        plants = (
+            coordinator.plants.values() if plant_id == TOTAL else [coordinator.plants[plant_id]]
+        )
+        self._sources = [e for p in plants for e in p.entity_ids]
+        self._meters = {e: PowerFromEnergy() for e in self._sources}
+        self._value: float | None = None
+
+    @property
+    def available(self) -> bool:
+        return self._value is not None
+
+    @property
+    def native_value(self) -> float | None:
+        return None if self._value is None else round(self._value, 1)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, self._sources, self._async_source_changed)
+        )
+        # Energy meters do not report while production is zero; re-evaluate regularly.
+        self.async_on_remove(
+            async_track_time_interval(self.hass, self._async_tick, timedelta(minutes=1))
+        )
+        self._recompute()
+
+    @callback
+    def _async_source_changed(self, event) -> None:
+        self._recompute()
+        self.async_write_ha_state()
+
+    @callback
+    def _async_tick(self, now) -> None:
+        self._recompute()
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
+
+    def _recompute(self) -> None:
+        now = dt_util.utcnow().timestamp()
+        total = 0.0
+        for entity_id in self._sources:
+            watts = self._watts(entity_id, now)
+            if watts is None:
+                self._value = None
+                return
+            total += watts
+        self._value = total
+
+    def _watts(self, entity_id: str, now: float) -> float | None:
+        state = self.hass.states.get(entity_id)
+        try:
+            kind = entity_kind(self.hass, entity_id)
+            value = float(state.state)
+        except (EntityProblem, AttributeError, ValueError):
+            return None
+        unit = state.attributes.get("unit_of_measurement")
+        if kind == "power":
+            return max(PowerConverter.convert(value, unit, UnitOfPower.WATT), 0.0)
+        wh = EnergyConverter.convert(value, unit, UnitOfEnergy.WATT_HOUR)
+        return self._meters[entity_id].update(wh, now)
+
+
+class ActualEnergyTodaySensor(ForecastEntity):
+    """Today's production from the 15-minute actuals the forecast is evaluated against."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator, plant_id) -> None:
+        super().__init__(coordinator, plant_id, "actual_energy_today")
+
+    @property
+    def native_value(self) -> float | None:
+        times, wh = self.coordinator.actual_today.get(self._plant_id, (np.array([]), np.array([])))
+        today = Windows.current()
+        mask = (times >= today.today) & (times < today.tomorrow)
+        return round(float(np.sum(wh[mask])) / 1000, 3)

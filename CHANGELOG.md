@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 – 2026-10-12
+
+- New sensors per plant and in total: **Production now** (W, live sum of the source sensors;
+  derived from the meter for energy sensors) and **Production today** (kWh). Both have long-term
+  statistics, so actual and forecast can be charted side by side without template sensors.
+- Status sensor shows the history range as unknown (instead of 0 days) for models trained before
+  0.3.0, until their next training.
+
 ## 0.3.0 – 2026-10-12
 
 - Dashboard card `custom:ml-pv-forecast-card` (based on apexcharts-card): today's actual

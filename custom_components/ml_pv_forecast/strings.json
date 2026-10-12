@@ -133,6 +133,12 @@
           "ready": "Ready",
           "error": "Error"
         }
+      },
+      "actual_power": {
+        "name": "Production now"
+      },
+      "actual_energy_today": {
+        "name": "Production today"
       }
     }
   },

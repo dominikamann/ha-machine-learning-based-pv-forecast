@@ -2,6 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import numpy as np
+import pytest
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.ml_pv_forecast.sensor import Windows
@@ -93,3 +94,63 @@ async def test_status_shows_history_coverage(recorder_mock, hass, open_meteo):
     attrs = hass.states.get(status.entity_id).attributes
     assert attrs["history_days"] >= 50 and attrs["history_from"] and attrs["rows"] > 0
     assert attrs["full_year"] is False
+
+
+def _entity(hass, entry, suffix):
+    registry = er.async_get(hass)
+    return next(
+        e.entity_id
+        for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        if e.unique_id.endswith(suffix)
+    )
+
+
+async def test_actual_power_follows_source_sensors_live(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    plant_id = next(iter(entry.runtime_data.plants))
+    attrs = dict(hass.states.get("sensor.pv").attributes)
+    hass.states.async_set("sensor.pv", "1500", attrs)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(_entity(hass, entry, f"{plant_id}_actual_power")).state) == 1500
+    hass.states.async_set("sensor.pv", "2.5", {**attrs, "unit_of_measurement": "kW"})
+    await hass.async_block_till_done()
+    assert float(hass.states.get(_entity(hass, entry, f"{plant_id}_actual_power")).state) == 2500
+    assert float(hass.states.get(_entity(hass, entry, "total_actual_power")).state) == 2500
+
+
+async def test_actual_power_from_energy_meter(hass, freezer):
+    from custom_components.ml_pv_forecast.sensor import PowerFromEnergy
+
+    meter = PowerFromEnergy()
+    t0 = 1_000_000.0
+    assert meter.update(10_000.0, t0) is None  # needs two readings
+    assert meter.update(10_050.0, t0 + 300) == pytest.approx(600.0)  # 50 Wh in 5 min
+    assert meter.update(10_050.0, t0 + 300 + 1200) == 0.0  # no increase for 20 min
+    assert meter.update(5.0, t0 + 1600) is None  # counter reset starts over
+
+
+async def test_actual_energy_today_from_archive(recorder_mock, hass, open_meteo):
+    from homeassistant.util import dt as dt_util
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    midnight = int(dt_util.start_of_local_day().timestamp())
+    await hass.async_add_executor_job(
+        coordinator.archive.add_actuals, "total", midnight + np.arange(4) * 900, np.full(4, 250.0)
+    )
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    state = hass.states.get(_entity(hass, entry, "total_actual_energy_today"))
+    assert float(state.state) == 1.0
+    assert state.attributes["state_class"] == "total_increasing"
+
+
+async def test_status_history_unknown_for_models_without_history(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    plant = next(iter(entry.runtime_data.plants.values()))
+    for key in ("history_start", "history_end", "rows"):
+        vars(plant.model).pop(key, None)  # a model saved by 0.2.x
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    attrs = hass.states.get(_entity(hass, entry, f"{plant.plant_id}_status")).attributes
+    assert attrs["history_days"] is None and attrs["full_year"] is None

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 – 2026-10-12
+
+- Card: removed the "Rest of today" view; cards set to `view: today` show the overview.
+- Card: weather symbols only for hours with sun. A clear night sky has the same weather code as a
+  sunny hour and showed up as a sun in the evening.
+
 ## 0.5.3 – 2026-10-12
 
 - Card, Plants view: today's actual production per plant as light lines over the forecast areas,

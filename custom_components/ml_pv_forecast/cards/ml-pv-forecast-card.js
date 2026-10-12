@@ -1,18 +1,17 @@
 /*
  * PV forecast card for the Machine-Learning-Based PV Forecast integration.
  *
- * Three views, switched with the tabs at the top:
+ * Four views, switched with the tabs at the top:
  *   overview – today and the next days, one chart per day covering only the hours with sun
  *   carousel – one day at a time (today, tomorrow, ...), switching automatically
  *   plants   – the next days per plant, stacked
- *   today    – what is still to come today, in 15-minute steps
  *   review   – the last 7 days: morning forecast against actual production and the hit rate
  * Rendering is delegated to apexcharts-card.
  *
  *   type: custom:ml-pv-forecast-card
  *   entity: sensor.pv_forecast_total_forecast_curve   # optional, found automatically
  *   days: 3                                            # overview: 1–3, optional
- *   view: overview              # start view: overview | carousel | today | plants | review
+ *   view: overview              # start view: overview | carousel | plants | review
  *   interval: 10                                       # carousel: seconds per day
  *   layout: stacked                                    # overview: stacked | timeline
  *   tabs: true                                         # false shows only the start view
@@ -23,7 +22,6 @@ const TEXT = {
   en: {
     overview: "Overview",
     carousel: "Days",
-    todayTab: "Today",
     plants: "Plants",
     total: "Total",
     barsHint: "lines: actual · areas: forecast",
@@ -37,10 +35,6 @@ const TEXT = {
     tomorrow: "Tomorrow",
     dayAfter: "Day after tomorrow",
     sofar: "so far",
-    remaining: "Still expected",
-    peak: "Strongest hour",
-    end: "Production ends",
-    done: "Production for today is over.",
     hitRate: "Hit rate",
     inBand: "Hours in range",
     noMorning: "No morning forecast was recorded for this day.",
@@ -52,7 +46,6 @@ const TEXT = {
   de: {
     overview: "Übersicht",
     carousel: "Tage",
-    todayTab: "Heute",
     plants: "Anlagen",
     total: "Gesamt",
     barsHint: "Linien: tatsächlich · Flächen: Prognose",
@@ -66,10 +59,6 @@ const TEXT = {
     tomorrow: "Morgen",
     dayAfter: "Übermorgen",
     sofar: "bisher",
-    remaining: "Noch erwartet",
-    peak: "Stärkste Stunde",
-    end: "Erzeugung endet",
-    done: "Die Erzeugung für heute ist vorbei.",
     hitRate: "Trefferquote",
     inBand: "Stunden im Band",
     noMorning: "Für diesen Tag wurde keine Morgenprognose gespeichert.",
@@ -82,7 +71,7 @@ const TEXT = {
 };
 
 const COLORS = { forecast: "#29B6F6", band: "#81D4FA", actual: "#66BB6A", morning: "#B39DDB" };
-const VIEWS = ["overview", "carousel", "today", "plants", "review"];
+const VIEWS = ["overview", "carousel", "plants", "review"];
 const PLANT_COLORS = ["#29B6F6", "#FFCA28", "#AB47BC", "#26A69A", "#EF5350", "#8D6E63"];
 // Lighter shades of the plant colours for the actual-production lines drawn over the areas.
 const PLANT_LIGHT = ["#E1F5FE", "#FFF8E1", "#F3E5F5", "#E0F2F1", "#FFEBEE", "#EFEBE9"];
@@ -108,11 +97,6 @@ const hourlyAverage = (source, field) => `
 const GEN = {
   hourly: (key) => `
     return (entity.attributes.hourly || []).map(r => [new Date(r.time).getTime(), r.${key} / 1000]);`,
-  quartersAhead: (key) => `
-    const now = Date.now() - 15 * 60 * 1000;
-    return (entity.attributes.quarters || [])
-      .filter(r => new Date(r.time).getTime() >= now)
-      .map(r => [new Date(r.time).getTime(), r.${key} / 1000]);`,
   morning: hourlyAverage("entity.attributes.morning", "p50"),
   actual: hourlyAverage("entity.attributes.actual", "w"),
   // Sum of the hourly P50 of several plants (apexcharts-card passes `hass` to generators).
@@ -175,18 +159,26 @@ function dayWeather(hourly, dayStart) {
   return [symbol, tmax].filter(Boolean).join(" ");
 }
 
-// Small grey weather symbols along the top of a chart, every `step` hours within [from, to).
 // Hours between weather symbols so they keep ~26 px apart at the given chart width.
 function weatherStep(widthPx, hours) {
   const pxPerHour = Math.max(120, widthPx - 70) / hours;
   return [1, 2, 3, 4, 6, 8, 12, 24].find((s) => s * pxPerHour >= 26) ?? 24;
 }
 
+// Small grey weather symbols along the top of a chart, every `step` hours within [from, to).
+// Only hours with sun get one: WMO code 0 means a clear sky at night as well.
 function weatherMarks(hourly, from, to, step, offsetY = -2) {
   return (hourly || [])
     .filter((r) => {
       const t = new Date(r.time).getTime();
-      return t >= from && t < to && r.wc !== null && r.wc !== undefined && (t - from) % (step * HOUR) === 0;
+      return (
+        t >= from &&
+        t < to &&
+        r.p50 > 0 &&
+        r.wc !== null &&
+        r.wc !== undefined &&
+        (t - from) % (step * HOUR) === 0
+      );
     })
     .map((r) => ({
       x: new Date(r.time).getTime() + HOUR / 2,
@@ -233,7 +225,8 @@ class MlPvForecastCard extends HTMLElement {
   setConfig(config) {
     const days = Number(config.days ?? 3);
     if (!(days >= 1 && days <= 3)) throw new Error("days must be 1, 2 or 3");
-    const view = config.view ?? "overview";
+    // The former "today" view was removed; existing cards fall back to the overview.
+    const view = config.view === "today" ? "overview" : config.view ?? "overview";
     if (!VIEWS.includes(view)) throw new Error(`view must be one of ${VIEWS.join(", ")}`);
     const interval = Number(config.interval ?? 10);
     if (!(interval >= 2)) throw new Error("interval must be at least 2 seconds");
@@ -467,7 +460,6 @@ class MlPvForecastCard extends HTMLElement {
     if (this._view === "review" && !(state.attributes.review || [])[this._reviewIndex]) {
       return t.noReview;
     }
-    if (this._view === "today" && !this._todaySummary(state)) return t.done;
     if (this._view === "plants" && !this._plantStates().length) return t.noPlants;
     return undefined;
   }
@@ -482,7 +474,7 @@ class MlPvForecastCard extends HTMLElement {
         item(t.range, COLORS.band, true),
         item(t.morning, COLORS.morning, true),
       ],
-      today: [item(t.forecast, COLORS.forecast), item(t.range, COLORS.band, true)],
+      forecast: [item(t.forecast, COLORS.forecast), item(t.range, COLORS.band, true)],
       review: [
         item(t.actual, COLORS.actual),
         item(t.morning, COLORS.morning, true),
@@ -490,7 +482,7 @@ class MlPvForecastCard extends HTMLElement {
       ],
     };
     if (this._view === "carousel") {
-      return (this._dayIndex === 0 ? items.overview : items.today).join("");
+      return (this._dayIndex === 0 ? items.overview : items.forecast).join("");
     }
     if (this._view === "plants") {
       const plants = this._plantStates()
@@ -510,7 +502,6 @@ class MlPvForecastCard extends HTMLElement {
               {
                 overview: t.overview,
                 carousel: t.carousel,
-                today: t.todayTab,
                 plants: t.plants,
                 review: t.review,
               }[v]
@@ -518,7 +509,6 @@ class MlPvForecastCard extends HTMLElement {
         ).join("")}</div>`
       : "";
     const top = title + tabs;
-    if (this._view === "today") return top + this._todayStats(state, t);
     if (this._view === "review") return top + this._reviewStats(state, t);
     if (this._view === "carousel") return top + this._carouselStats(state, t);
     if (this._view === "plants") return top + this._plantsTable(t);
@@ -554,39 +544,6 @@ class MlPvForecastCard extends HTMLElement {
       this._kwh(value),
       i === 0 ? `${t.sofar} ${this._kwh(actualKwh)}` : undefined
     )}</div><div class="dots">${dots}</div>`;
-  }
-
-  _todaySummary(state) {
-    const now = Date.now();
-    const end = localMidnight(1);
-    const rows = (state.attributes.quarters || []).filter((r) => {
-      const time = new Date(r.time).getTime();
-      return time + 15 * 60 * 1000 > now && time < end;
-    });
-    if (!rows.length) return undefined;
-    const sum = (key) => rows.reduce((s, r) => s + r[key], 0) / 4 / 1000;
-    const p50 = sum("p50");
-    if (p50 < 0.05) return undefined;
-    const peak = rows.reduce((best, r) => (r.p50 > best.p50 ? r : best), rows[0]);
-    const last = [...rows].reverse().find((r) => r.p50 > peak.p50 * 0.05);
-    return {
-      p10: sum("p10"),
-      p50,
-      p90: sum("p90"),
-      peak,
-      end: new Date(last.time).getTime() + 15 * 60 * 1000,
-    };
-  }
-
-  _todayStats(state, t) {
-    const s = this._todaySummary(state);
-    if (!s) return "";
-    const kw = (s.peak.p50 / 1000).toLocaleString(this._lang(), { maximumFractionDigits: 1 });
-    return `<div class="stats">${[
-      this._stat(t.remaining, this._kwh(s.p50), `${this._kwh(s.p10)} – ${this._kwh(s.p90)}`),
-      this._stat(t.peak, this._time(s.peak.time), `${kw} kW`),
-      this._stat(t.end, `≈ ${this._time(s.end)}`),
-    ].join("")}</div>`;
   }
 
   _reviewStats(state, t) {
@@ -657,7 +614,7 @@ class MlPvForecastCard extends HTMLElement {
       apex_config: {
         chart: { height, width: "100%", parentHeightOffset: 0, redrawOnParentResize: true },
         legend: { show: false },
-        grid: { padding: { left: yAxis ? 0 : 8, right: 8 } },
+        grid: { padding: { left: 8, right: 8 } }, // keeps the kW labels off the grid lines
         xaxis: { labels: { datetimeUTC: false, format: "HH:mm" }, tickAmount: 4 },
         tooltip: { x: { format: "ddd HH:mm" } },
         stroke: { curve: "smooth" },
@@ -673,33 +630,6 @@ class MlPvForecastCard extends HTMLElement {
 
   _specs(entity, state, t) {
     const a = state.attributes;
-    if (this._view === "today") {
-      const s = this._todaySummary(state);
-      const start = Date.now() - (Date.now() % HOUR);
-      const hours = Math.max(1, Math.ceil((s.end - start) / HOUR));
-      const max = this._maxKw((a.quarters || []).map((r) => r.p90 / 1000));
-      return [
-        {
-          key: `${start}-${hours}`,
-          weight: 1,
-          config: this._chart({
-            entity,
-            start,
-            hours,
-            max,
-            yAxis: true,
-            now: true,
-            series: [
-              this._series(entity, t.forecast, COLORS.forecast, GEN.quartersAhead("p50"), {
-                type: "area",
-                opacity: 0.3,
-              }),
-              ...this._band(entity, t, GEN.quartersAhead("p10"), GEN.quartersAhead("p90")),
-            ],
-          }),
-        },
-      ];
-    }
     if (this._view === "review") {
       const i = this._reviewIndex;
       const day = a.review[i];
@@ -1025,7 +955,7 @@ window.customCards.push({
   type: "ml-pv-forecast-card",
   name: "PV Forecast",
   description:
-    "Machine-learning PV forecast: the next days (sun hours only), what is still to come today and a review of past days with the hit rate.",
+    "Machine-learning PV forecast: the next days (sun hours only), per plant and a review of past days with the hit rate.",
   preview: true,
   documentationURL: "https://github.com/dominikamann/ha-machine-learning-based-pv-forecast",
 });

@@ -17,8 +17,14 @@ from custom_components.ml_pv_forecast.core.weather import (
 )
 
 VARS = [
-    "shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation", "temperature_2m",
-    "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high", "snow_depth",
+    "shortwave_radiation",
+    "direct_normal_irradiance",
+    "diffuse_radiation",
+    "temperature_2m",
+    "cloud_cover_low",
+    "cloud_cover_mid",
+    "cloud_cover_high",
+    "snow_depth",
 ]
 
 

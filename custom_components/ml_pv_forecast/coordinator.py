@@ -104,7 +104,9 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             _LOGGER.warning("Forecast archive was unreadable and has been reset")
         today = dt_util.now().date().isoformat()
         for plant in self.plants.values():
-            model = await self.hass.async_add_executor_job(load_model, self._model_path(plant.plant_id))
+            model = await self.hass.async_add_executor_job(
+                load_model, self._model_path(plant.plant_id)
+            )
             if model is not None and model.config_hash == plant.config_hash:
                 plant.model = model
                 plant.status = "ready" if model.kind == "gbm" else "learning"
@@ -152,8 +154,13 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
 
     def _issue(self, issue_id: str, key: str, **placeholders: str) -> None:
         ir.async_create_issue(
-            self.hass, DOMAIN, issue_id, is_fixable=False, severity=ir.IssueSeverity.WARNING,
-            translation_key=key, translation_placeholders=placeholders,
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=key,
+            translation_placeholders=placeholders,
         )
 
     def _clear_issue(self, issue_id: str) -> None:
@@ -162,8 +169,11 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
     def _entity_problem(self, plant: PlantRuntime, err: EntityProblem) -> None:
         plant.status, plant.error = "error", str(err)
         self._issue(
-            f"entity_{plant.plant_id}", "entity_problem",
-            plant=plant.name, entity_id=err.entity_id, reason=err.reason,
+            f"entity_{plant.plant_id}",
+            "entity_problem",
+            plant=plant.name,
+            entity_id=err.entity_id,
+            reason=err.reason,
         )
 
     # ---- forecasting -----------------------------------------------------------------------
@@ -216,8 +226,17 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             actuals[plant.plant_id] = quarter_sums(times, wh)
             ratio = self._live_ratio(plant, *actuals[plant.plant_id])
             forecasts[plant.plant_id] = await self.hass.async_add_executor_job(
-                forecast_plant, plant.plant_id, plant.model, hourly, quarter,
-                self.latitude, self.longitude, now_ts, plant.correction, ratio, plant.tau,
+                forecast_plant,
+                plant.plant_id,
+                plant.model,
+                hourly,
+                quarter,
+                self.latitude,
+                self.longitude,
+                now_ts,
+                plant.correction,
+                ratio,
+                plant.tau,
             )
         if not forecasts:
             return {}
@@ -239,7 +258,9 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         start = end - LIVE_WINDOW
         if int(times[-3]) != start:
             return None
-        elevation, _ = sun_position(np.array([start + LIVE_WINDOW / 2]), self.latitude, self.longitude)
+        elevation, _ = sun_position(
+            np.array([start + LIVE_WINDOW / 2]), self.latitude, self.longitude
+        )
         return live_ratio(
             float(wh[-3:].sum()),
             float(previous.raw_energy(start, end)[1]),
@@ -284,9 +305,18 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 p = fc.energy(w_start, w_end)
                 rows.append(
                     ArchivedForecast(
-                        key, horizon, now, w_start, w_end, float(p[0]), float(p[1]), float(p[2]),
-                        float(fc.raw_energy(w_start, w_end)[1]), fc.ratio,
-                        window_cloud(hourly, w_start, w_end), capacity,
+                        key,
+                        horizon,
+                        now,
+                        w_start,
+                        w_end,
+                        float(p[0]),
+                        float(p[1]),
+                        float(p[2]),
+                        float(fc.raw_energy(w_start, w_end)[1]),
+                        fc.ratio,
+                        window_cloud(hourly, w_start, w_end),
+                        capacity,
                     )
                 )
         self.archive.add_forecasts(rows)
@@ -310,8 +340,16 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 last = (now - timedelta(days=1)).date()
                 weather = await self.client.history(first, max(first, last), now.date())
                 result = await self.hass.async_add_executor_job(
-                    train_plant, times, wh, weather, self.latitude, self.longitude, now_ts,
-                    plant.model, plant.limit_w, plant.config_hash,
+                    train_plant,
+                    times,
+                    wh,
+                    weather,
+                    self.latitude,
+                    self.longitude,
+                    now_ts,
+                    plant.model,
+                    plant.limit_w,
+                    plant.config_hash,
                 )
             except NotEnoughData as err:
                 plant.status, plant.error = "learning", str(err)
@@ -324,7 +362,9 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 if plant.model is None:
                     plant.status = "error"
                 plant.error = f"training: {err}"
-                self._issue(f"training_{plant_id}", "training_failed", plant=plant.name, error=str(err))
+                self._issue(
+                    f"training_{plant_id}", "training_failed", plant=plant.name, error=str(err)
+                )
                 return
             if result.promoted:
                 await self.hass.async_add_executor_job(

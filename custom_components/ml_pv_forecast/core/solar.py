@@ -37,9 +37,9 @@ def sun_position(
     sidereal_hours = (18.697374558 + 24.06570982441908 * days) % 24
     hour_angle = np.radians(sidereal_hours * 15 + longitude) - right_ascension
     phi = np.radians(latitude)
-    sin_elevation = np.sin(phi) * np.sin(declination) + np.cos(phi) * np.cos(
-        declination
-    ) * np.cos(hour_angle)
+    sin_elevation = np.sin(phi) * np.sin(declination) + np.cos(phi) * np.cos(declination) * np.cos(
+        hour_angle
+    )
     elevation = np.arcsin(np.clip(sin_elevation, -1.0, 1.0))
     azimuth = np.arctan2(
         -np.sin(hour_angle),

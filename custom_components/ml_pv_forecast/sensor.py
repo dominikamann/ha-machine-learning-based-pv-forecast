@@ -30,7 +30,9 @@ class Windows:
     @classmethod
     def current(cls) -> Windows:
         day = dt_util.now().date()
-        starts = [int(dt_util.start_of_local_day(day + timedelta(days=i)).timestamp()) for i in range(4)]
+        starts = [
+            int(dt_util.start_of_local_day(day + timedelta(days=i)).timestamp()) for i in range(4)
+        ]
         return cls(int(dt_util.utcnow().timestamp()), *starts)
 
 
@@ -179,8 +181,12 @@ class CurveSensor(ForecastEntity):
 
         def rows(times, values, start, end, scale):
             return [
-                {"time": _iso(t), "p10": round(v[0] * scale, 1), "p50": round(v[1] * scale, 1),
-                 "p90": round(v[2] * scale, 1)}
+                {
+                    "time": _iso(t),
+                    "p10": round(v[0] * scale, 1),
+                    "p50": round(v[1] * scale, 1),
+                    "p90": round(v[2] * scale, 1),
+                }
                 for t, v in zip(times, values, strict=True)
                 if start <= t < end
             ]
@@ -190,7 +196,12 @@ class CurveSensor(ForecastEntity):
             "hourly": rows(fc.hour_times, fc.hourly, hour_start, hour_start + 72 * 3600, 1.0),
             "quarters": rows(fc.quarter_times, fc.quarter, w.today, w.now + 86400, 4.0),
             "morning": [
-                {"time": _iso(t), "p10": round(a * 4, 1), "p50": round(b * 4, 1), "p90": round(c * 4, 1)}
+                {
+                    "time": _iso(t),
+                    "p10": round(a * 4, 1),
+                    "p50": round(b * 4, 1),
+                    "p90": round(c * 4, 1),
+                }
                 for t, a, b, c in morning
             ],
         }

@@ -46,9 +46,9 @@ class PlantModel:
             p50 = X[:, PLANE_COLUMNS] @ self.coef
             out = np.column_stack([p50 * self.spread[0], p50, p50 * self.spread[1]])
         else:
-            out = np.column_stack(
-                [self.estimators[q].predict(X) for q in QUANTILES]
-            ) * self.capacity
+            out = (
+                np.column_stack([self.estimators[q].predict(X) for q in QUANTILES]) * self.capacity
+            )
         out = np.clip(out, 0.0, 1.1 * self.capacity)
         out.sort(axis=1)
         out[X[:, col("sun_elevation")] < 0] = 0.0
@@ -90,8 +90,14 @@ def fit_gbm(
     estimators = {}
     for q in QUANTILES:
         estimator = HistGradientBoostingRegressor(
-            loss="quantile", quantile=q, learning_rate=0.05, max_iter=300,
-            max_leaf_nodes=31, min_samples_leaf=20, l2_regularization=0.1, random_state=0,
+            loss="quantile",
+            quantile=q,
+            learning_rate=0.05,
+            max_iter=300,
+            max_leaf_nodes=31,
+            min_samples_leaf=20,
+            l2_regularization=0.1,
+            random_state=0,
         )
         estimator.fit(X, target, sample_weight=weights)
         estimators[q] = estimator
@@ -124,7 +130,9 @@ def train(
     if len(np.unique(t // DAY)) < MIN_GBM_DAYS:
         if active_gbm is not None:
             return TrainResult(active_gbm, False, len(t), None, None, "ready")
-        return TrainResult(fit_fallback(Xu, yu, capacity, now), True, len(t), None, None, "learning")
+        return TrainResult(
+            fit_fallback(Xu, yu, capacity, now), True, len(t), None, None, "learning"
+        )
 
     holdout = t >= now - HOLDOUT_DAYS * DAY
     if holdout.sum() < MIN_UNSEEN_ROWS or (~holdout).sum() < MIN_UNSEEN_ROWS:

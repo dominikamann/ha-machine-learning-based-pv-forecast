@@ -1,0 +1,12 @@
+type: custom:apexcharts-card
+header:
+  show: true
+  title: Short-term forecasts
+graph_span: 2d
+series:
+  - entity: sensor.pv_forecast_total_next_30_minutes
+    name: Next 30 min
+  - entity: sensor.pv_forecast_total_next_hour
+    name: Next hour
+  - entity: sensor.pv_forecast_total_next_6_hours
+    name: Next 6 h

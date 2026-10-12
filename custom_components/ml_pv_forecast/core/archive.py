@@ -89,7 +89,11 @@ class Archive:
         with self._lock, self._db:
             self._db.executemany(
                 "INSERT OR REPLACE INTO actuals VALUES (?,?,?)",
-                [(plant, int(t), float(v)) for t, v in zip(times, wh, strict=True) if np.isfinite(v)],
+                [
+                    (plant, int(t), float(v))
+                    for t, v in zip(times, wh, strict=True)
+                    if np.isfinite(v)
+                ],
             )
 
     def _actual_sum(self, plant: str, start: int, end: int) -> float | None:

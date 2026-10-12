@@ -13,8 +13,20 @@ DAY = 86400
 
 def row(p50, actual, persistence=None, start=0, horizon="day_ahead", issued=None, ratio=None):
     end = start + (DAY if horizon == "day_ahead" else 3600)
-    f = ArchivedForecast("a", horizon, start - 3600 if issued is None else issued, start, end,
-                         p50 * 0.8, p50, p50 * 1.2, p50, ratio, 50.0, 1000.0)
+    f = ArchivedForecast(
+        "a",
+        horizon,
+        start - 3600 if issued is None else issued,
+        start,
+        end,
+        p50 * 0.8,
+        p50,
+        p50 * 1.2,
+        p50,
+        ratio,
+        50.0,
+        1000.0,
+    )
     return EvalRow(f, actual, persistence)
 
 
@@ -42,8 +54,9 @@ def test_correction_learns_systematic_overestimate():
     ]
     corr = Correction.from_rows(rows, now)
     assert corr is not None
-    f = corr.factors(np.array([1.0]), np.array([12.0]), np.array([100.0]), np.array([50.0]),
-                     np.array([0.5]))
+    f = corr.factors(
+        np.array([1.0]), np.array([12.0]), np.array([100.0]), np.array([50.0]), np.array([0.5])
+    )
     assert f[0] == pytest.approx(0.8, abs=0.05)
 
 
@@ -53,7 +66,9 @@ def test_correction_needs_thirty_days():
 
 
 def test_tau_from_rows_uses_short_rows_with_ratio():
-    rows = [row(500, 500, start=1800 * i, horizon="1h", issued=1800 * i, ratio=1.0) for i in range(60)]
+    rows = [
+        row(500, 500, start=1800 * i, horizon="1h", issued=1800 * i, ratio=1.0) for i in range(60)
+    ]
     assert tau_from_rows(rows) == 30.0  # ratio 1 everywhere: every tau ties, first grid value wins
     assert tau_from_rows([row(500, 500, horizon="1h")]) == 90.0  # no ratio -> default
     assert tau_from_rows([]) == 90.0

@@ -34,8 +34,16 @@ def synthetic_weather(start: int, count: int, interval: int = 3600, seed: int = 
     pct = cloud * 100.0
     zeros = np.zeros(count)
     return WeatherData(
-        times=times, interval=interval, ghi=ghi, dni=dni, dhi=dhi, temperature=temperature,
-        cloud_low=pct, cloud_mid=pct * 0.5, cloud_high=pct * 0.3, snow_depth=zeros,
+        times=times,
+        interval=interval,
+        ghi=ghi,
+        dni=dni,
+        dhi=dhi,
+        temperature=temperature,
+        cloud_low=pct,
+        cloud_mid=pct * 0.5,
+        cloud_high=pct * 0.3,
+        snow_depth=zeros,
         is_reanalysis=zeros.copy(),
     )
 
@@ -52,9 +60,8 @@ def synthetic_production(
     mid = weather.times + weather.interval / 2
     elevation, azimuth = sun_position(mid, LAT, LON)
     poa = sum(
-        share * plane_irradiance(
-            weather.ghi, weather.dni, weather.dhi, elevation, azimuth, tilt, az
-        )
+        share
+        * plane_irradiance(weather.ghi, weather.dni, weather.dhi, elevation, azimuth, tilt, az)
         for tilt, az, share in planes
     )
     watts = poa / 1000.0 * kwp * 1000.0 * 0.85

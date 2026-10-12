@@ -22,7 +22,9 @@ def to_quarters(
     np.add.at(counts, pos_c[valid], 1)
     hour_sum = sums[pos_c]
     share = np.where(
-        hour_sum > 0, weight / np.where(hour_sum > 0, hour_sum, 1.0), 1.0 / np.maximum(counts[pos_c], 1)
+        hour_sum > 0,
+        weight / np.where(hour_sum > 0, hour_sum, 1.0),
+        1.0 / np.maximum(counts[pos_c], 1),
     )
     out = hourly[pos_c] * share[:, None]
     out[~valid] = np.nan

@@ -1,0 +1,18 @@
+type: custom:apexcharts-card
+header:
+  show: true
+  title: Forecast error (lower is better)
+graph_span: 12w
+series:
+  - entity: sensor.pv_forecast_total_accuracy_30_minutes
+    name: 30 min
+    group_by: { func: last, duration: 1d }
+  - entity: sensor.pv_forecast_total_accuracy_1_hour
+    name: 1 h
+    group_by: { func: last, duration: 1d }
+  - entity: sensor.pv_forecast_total_accuracy_6_hours
+    name: 6 h
+    group_by: { func: last, duration: 1d }
+  - entity: sensor.pv_forecast_total_accuracy_day_ahead
+    name: Day ahead
+    group_by: { func: last, duration: 1d }

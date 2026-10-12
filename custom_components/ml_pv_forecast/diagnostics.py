@@ -23,8 +23,12 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry) -> dict
             "status": p.status,
             "error": p.error,
             "rows": p.rows,
-            "model": None if p.model is None else {
-                "kind": p.model.kind, "capacity_wh": p.model.capacity, "trained_at": p.model.trained_at,
+            "model": None
+            if p.model is None
+            else {
+                "kind": p.model.kind,
+                "capacity_wh": p.model.capacity,
+                "trained_at": p.model.trained_at,
             },
             "tau": p.tau,
             "correction": p.correction is not None,
@@ -37,7 +41,9 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry) -> dict
             "latitude": c.latitude,
             "longitude": c.longitude,
             "options": dict(entry.options),
-            "weather_fetched_at": None if c.weather_fetched_at is None else c.weather_fetched_at.isoformat(),
+            "weather_fetched_at": None
+            if c.weather_fetched_at is None
+            else c.weather_fetched_at.isoformat(),
             "plants": plants,
             "total_metrics": {h: asdict(m) for h, m in c.metrics.get(TOTAL, {}).items()},
         },

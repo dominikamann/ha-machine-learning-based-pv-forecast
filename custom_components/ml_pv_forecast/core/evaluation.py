@@ -50,7 +50,11 @@ def compute_metrics(rows: list[EvalRow]) -> Metrics | None:
 
 
 def correction_features(
-    lead_hours: np.ndarray, hour: np.ndarray, doy: np.ndarray, cloud: np.ndarray, p50_norm: np.ndarray
+    lead_hours: np.ndarray,
+    hour: np.ndarray,
+    doy: np.ndarray,
+    cloud: np.ndarray,
+    p50_norm: np.ndarray,
 ) -> np.ndarray:
     return np.column_stack([lead_hours, hour, doy, cloud, p50_norm])
 
@@ -81,7 +85,11 @@ class Correction:
         self._estimator = estimator
 
     def factors(
-        self, lead_hours: np.ndarray, hour: np.ndarray, doy: np.ndarray, cloud: np.ndarray,
+        self,
+        lead_hours: np.ndarray,
+        hour: np.ndarray,
+        doy: np.ndarray,
+        cloud: np.ndarray,
         p50_norm: np.ndarray,
     ) -> np.ndarray:
         X = correction_features(lead_hours, hour, doy, cloud, p50_norm)
@@ -91,8 +99,10 @@ class Correction:
     def from_rows(rows: list[EvalRow], now: int) -> Correction | None:
         """A correction that beats the uncorrected forecast on the last 14 days, else None."""
         rows = [
-            r for r in rows
-            if r.forecast.p50 > 0.02 * r.forecast.capacity * (r.forecast.end - r.forecast.start) / 3600
+            r
+            for r in rows
+            if r.forecast.p50
+            > 0.02 * r.forecast.capacity * (r.forecast.end - r.forecast.start) / 3600
         ]
         if not rows:
             return None
@@ -116,7 +126,9 @@ class Correction:
 
 
 def tau_from_rows(rows: list[EvalRow]) -> float:
-    rows = [r for r in rows if r.forecast.horizon in SHORT_HORIZONS and r.forecast.ratio is not None]
+    rows = [
+        r for r in rows if r.forecast.horizon in SHORT_HORIZONS and r.forecast.ratio is not None
+    ]
     if not rows:
         return DEFAULT_TAU
     f = [r.forecast for r in rows]

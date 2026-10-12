@@ -181,9 +181,7 @@ class OpenMeteoClient:
         path = None
         if self._cache_dir is not None and end < today - timedelta(days=7):
             kind = "era5" if reanalysis else "hist"
-            path = (
-                self._cache_dir / f"{kind}_{self._lat:.2f}_{self._lon:.2f}_{start}_{end}.json"
-            )
+            path = self._cache_dir / f"{kind}_{self._lat:.2f}_{self._lon:.2f}_{start}_{end}.json"
         payload = await asyncio.to_thread(_read_json, path) if path else None
         if payload is None:
             payload = await self._get(

@@ -39,7 +39,8 @@ class EvccForecastView(HomeAssistantView):
         hass = request.app[KEY_HASS]
         entry = next(
             (
-                e for e in hass.config_entries.async_entries(DOMAIN)
+                e
+                for e in hass.config_entries.async_entries(DOMAIN)
                 if e.state is ConfigEntryState.LOADED
             ),
             None,

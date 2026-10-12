@@ -1,0 +1,20 @@
+type: custom:apexcharts-card
+header:
+  show: true
+  title: PV forecast – next 72 hours
+graph_span: 72h
+span:
+  start: hour
+stacked: true
+series:
+  # one entry per plant curve sensor
+  - entity: sensor.pv_forecast_south_roof_forecast_curve
+    name: South roof
+    type: column
+    data_generator: |
+      return entity.attributes.hourly.map(r => [new Date(r.time).getTime(), r.p50]);
+  - entity: sensor.pv_forecast_balcony_forecast_curve
+    name: Balcony
+    type: column
+    data_generator: |
+      return entity.attributes.hourly.map(r => [new Date(r.time).getTime(), r.p50]);

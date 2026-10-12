@@ -19,7 +19,9 @@ QUARTER = 900
 DAY = 86400
 
 
-def _integrate(times: np.ndarray, values: np.ndarray, step: int, start: int, end: int) -> np.ndarray:
+def _integrate(
+    times: np.ndarray, values: np.ndarray, step: int, start: int, end: int
+) -> np.ndarray:
     overlap = np.clip(np.minimum(times + step, end) - np.maximum(times, start), 0, None) / step
     return (values * overlap[:, None]).sum(axis=0)
 

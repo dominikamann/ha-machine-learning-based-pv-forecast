@@ -4,7 +4,9 @@ from custom_components.ml_pv_forecast.core.archive import Archive, ArchivedForec
 
 
 def fc(start, end, p50, horizon="1h", issued=0):
-    return ArchivedForecast("a", horizon, issued, start, end, p50 * 0.8, p50, p50 * 1.2, p50, None, 20.0, 1000.0)
+    return ArchivedForecast(
+        "a", horizon, issued, start, end, p50 * 0.8, p50, p50 * 1.2, p50, None, 20.0, 1000.0
+    )
 
 
 def test_evaluated_needs_complete_actuals_and_gives_persistence(tmp_path):

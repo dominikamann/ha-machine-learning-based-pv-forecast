@@ -1,0 +1,41 @@
+type: custom:apexcharts-card
+header:
+  show: true
+  title: PV today – forecast vs. actual
+graph_span: 1d
+span:
+  start: day
+now:
+  show: true
+series:
+  - entity: sensor.YOUR_PV_POWER
+    name: Actual
+    type: area
+    group_by:
+      func: avg
+      duration: 15min
+  - entity: sensor.pv_forecast_total_forecast_curve
+    name: Morning forecast
+    type: line
+    stroke_dash: 4
+    data_generator: |
+      return (entity.attributes.morning || []).map(r => [new Date(r.time).getTime(), r.p50]);
+  - entity: sensor.pv_forecast_total_forecast_curve
+    name: Live forecast
+    type: line
+    data_generator: |
+      return (entity.attributes.quarters || []).map(r => [new Date(r.time).getTime(), r.p50]);
+  - entity: sensor.pv_forecast_total_forecast_curve
+    name: Pessimistic (P10)
+    type: line
+    stroke_width: 1
+    opacity: 0.5
+    data_generator: |
+      return (entity.attributes.quarters || []).map(r => [new Date(r.time).getTime(), r.p10]);
+  - entity: sensor.pv_forecast_total_forecast_curve
+    name: Optimistic (P90)
+    type: line
+    stroke_width: 1
+    opacity: 0.5
+    data_generator: |
+      return (entity.attributes.quarters || []).map(r => [new Date(r.time).getTime(), r.p90]);

@@ -17,7 +17,11 @@
     "step": {
       "init": {
         "data": {
-          "evcc_enabled": "Provide a forecast endpoint for evcc"
+          "evcc_enabled": "Provide a forecast endpoint for evcc",
+          "model_variants": "Test model variants and pick the best one automatically"
+        },
+        "data_description": {
+          "model_variants": "Trains four variants every week (standard, with extra weather inputs, with a short memory, both) and runs the one that is clearly best for this plant. Off: standard only, training is faster."
         }
       }
     }
@@ -145,6 +149,16 @@
       },
       "hit_rate_week": {
         "name": "Hit rate 7 days"
+      },
+      "variant": {
+        "name": "Model variant",
+        "state": {
+          "standard": "Standard",
+          "weather_plus": "Weather Plus",
+          "short_memory": "Short term",
+          "weather_plus_short_memory": "Short term Weather Plus",
+          "fallback": "Simple model"
+        }
       }
     }
   },

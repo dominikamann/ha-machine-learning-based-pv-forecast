@@ -24,6 +24,8 @@ def test_sample_weights_halve_after_a_year_and_downweight_reanalysis():
     w = sample_weights(np.array([0, 365 * 86400]), 365 * 86400, np.array([0.0, 1.0]))
     assert w[0] == pytest.approx(0.5)
     assert w[1] == pytest.approx(0.3)
+    short = sample_weights(np.array([0]), 90 * 86400, np.array([0.0]), half_life_days=90)
+    assert short[0] == pytest.approx(0.5)
 
 
 def test_fallback_tracks_production():
@@ -53,7 +55,7 @@ def test_worse_candidate_keeps_active_model(monkeypatch):
     now = int(times[-1]) + 3600
     good = train(times, X, y, now - 10 * 86400).model
 
-    def zero_gbm(X, y, weights, capacity, now):
+    def zero_gbm(X, y, weights, capacity, now, variant="standard"):
         m = PlantModel("gbm", capacity, now, coef=None)
         m.predict = lambda X: np.zeros((len(X), 3))  # type: ignore[method-assign]
         return m
@@ -119,3 +121,35 @@ def test_model_remembers_its_training_history():
     m = result.model
     assert m.rows == result.rows > 0
     assert times[0] <= m.history_start < m.history_end <= times[-1]
+
+
+@pytest.mark.all_variants
+def test_every_variant_is_scored_and_the_choice_is_recorded():
+    from custom_components.ml_pv_forecast.core.variants import STANDARD, VARIANTS
+
+    times, X, y = data(200)
+    result = train(times, X, y, int(times[-1]) + 3600)
+    assert set(result.variant_scores) == {v.key for v in VARIANTS}
+    assert all(0 < s < 100 for s in result.variant_scores.values())
+    assert result.model.variant in result.variant_scores
+    only = train(times, X, y, int(times[-1]) + 3600, variants=(STANDARD,))
+    assert set(only.variant_scores) == {"standard"} and only.model.variant == "standard"
+
+
+@pytest.mark.all_variants
+def test_a_variant_that_sees_a_helpful_input_wins():
+    from custom_components.ml_pv_forecast.core.features import col
+
+    times, X, y = data(200)
+    rng = np.random.default_rng(3)
+    fog = rng.uniform(0, 1, len(y)) ** 3  # mostly clear, sometimes thick fog
+    X = X.copy()
+    X[:, col("visibility")] = 50000 * (1 - fog)
+    y = y * (1 - 0.8 * fog)
+    result = train(times, X, y, int(times[-1]) + 3600)
+    assert result.model.variant in ("weather_plus", "weather_plus_short_memory")
+    assert result.variant_scores[result.model.variant] < 0.9 * result.variant_scores["standard"]
+    # the model keeps seeing visibility when it forecasts
+    clear, foggy = X[:1].copy(), X[:1].copy()
+    foggy[:, col("visibility")] = 0.0
+    assert result.model.predict(foggy)[0, 1] <= result.model.predict(clear)[0, 1]

@@ -17,7 +17,11 @@
     "step": {
       "init": {
         "data": {
-          "evcc_enabled": "Prognose-Endpunkt für evcc bereitstellen"
+          "evcc_enabled": "Prognose-Endpunkt für evcc bereitstellen",
+          "model_variants": "Modellvarianten testen und die beste automatisch wählen"
+        },
+        "data_description": {
+          "model_variants": "Trainiert jede Woche vier Varianten (Standard, mit zusätzlichen Wetterdaten, mit kurzem Gedächtnis, beides) und nutzt die, die für diese Anlage klar am besten ist. Aus: nur Standard, das Training ist schneller."
         }
       }
     }
@@ -145,6 +149,16 @@
       },
       "hit_rate_week": {
         "name": "Trefferquote 7 Tage"
+      },
+      "variant": {
+        "name": "Modellvariante",
+        "state": {
+          "standard": "Standard",
+          "weather_plus": "Wetter Plus",
+          "short_memory": "Kurzzeit",
+          "weather_plus_short_memory": "Kurzzeit Wetter Plus",
+          "fallback": "Einfaches Modell"
+        }
       }
     }
   },

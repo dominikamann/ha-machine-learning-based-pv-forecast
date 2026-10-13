@@ -20,7 +20,7 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_ENTITIES, CONF_LIMIT_W, DOMAIN, SUBENTRY_PLANT, TOTAL
+from .const import CONF_ENTITIES, CONF_LIMIT_W, CONF_VARIANTS, DOMAIN, SUBENTRY_PLANT, TOTAL
 from .core.archive import Archive, ArchivedForecast
 from .core.band import NEUTRAL, fit_band, hourly_rows
 from .core.band import WINDOW_DAYS as BAND_WINDOW_DAYS
@@ -43,6 +43,7 @@ from .core.nowcast import (
 )
 from .core.pipeline import PlantForecast, forecast_plant, total_forecast, train_plant, window_cloud
 from .core.solar import sun_position
+from .core.variants import STANDARD, VARIANTS, Variant
 from .core.weather import OpenMeteoClient, OpenMeteoError, WeatherData
 from .history import EntityProblem, async_production, entity_kind, quarter_sums
 
@@ -96,6 +97,7 @@ class PlantRuntime:
     day_weight: float = DEFAULT_DAY_WEIGHT
     day_tau: float = DEFAULT_DAY_TAU
     band: tuple[float, float] = NEUTRAL
+    variant_scores: dict[str, float] = field(default_factory=dict)  # from the last training
     problem_since: datetime | None = None
     retry_at: datetime | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -459,6 +461,11 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             ratio, min(1.0, forecast_done / day_total), plant.day_weight, plant.day_tau
         )
 
+    @property
+    def variants(self) -> tuple[Variant, ...]:
+        """Variants trained each week: all of them, or only the standard when switched off."""
+        return VARIANTS if self.config_entry.options.get(CONF_VARIANTS, True) else (STANDARD,)
+
     def _fit_band(self, key: str, capacity: float) -> tuple[float, float]:
         """Band scale from the finished days' morning curves against what was produced."""
         today = dt_util.now().date()
@@ -571,6 +578,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                     plant.model,
                     plant.limit_w,
                     plant.config_hash,
+                    self.variants,
                 )
             except NotEnoughData as err:
                 plant.status, plant.error = "learning", str(err)
@@ -592,6 +600,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                     save_model, result.model, self._model_path(plant_id)
                 )
             plant.model, plant.status, plant.rows = result.model, result.status, result.rows
+            plant.variant_scores = result.variant_scores
             plant.error, plant.last_trained, plant.retry_at = None, now_ts, None
             _LOGGER.info(
                 "Training %s done in %.0f s: %s model, %d hours, %s",

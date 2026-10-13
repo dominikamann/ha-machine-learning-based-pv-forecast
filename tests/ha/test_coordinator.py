@@ -252,3 +252,18 @@ def test_morning_forecast_only_frozen_in_the_morning():
     assert not should_freeze(datetime(2026, 10, 12, 4, 0, tzinfo=tz), None)
     assert not should_freeze(datetime(2026, 10, 12, MORNING_UNTIL_HOUR, 0, tzinfo=tz), None)
     assert not should_freeze(datetime(2026, 10, 12, 6, 0, tzinfo=tz), "2026-10-12")
+
+
+@pytest.mark.all_variants
+async def test_variants_option_off_trains_only_the_standard(recorder_mock, hass, open_meteo):
+    from custom_components.ml_pv_forecast.const import CONF_VARIANTS
+
+    entry = await setup_plant(hass, open_meteo, variants=True)
+    assert len(next(iter(entry.runtime_data.plants.values())).variant_scores) == 4
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_VARIANTS: False})
+    await hass.async_block_till_done(wait_background_tasks=True)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    await coordinator.async_train(plant.plant_id)
+    assert plant.model.variant == "standard"
+    assert set(plant.variant_scores) == {"standard"}

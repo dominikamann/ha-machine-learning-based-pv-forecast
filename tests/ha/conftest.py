@@ -17,7 +17,7 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
-from custom_components.ml_pv_forecast.const import CONF_ENTITIES, CONF_EVCC, DOMAIN
+from custom_components.ml_pv_forecast.const import CONF_ENTITIES, CONF_EVCC, CONF_VARIANTS, DOMAIN
 from tests.synthetic import synthetic_production, synthetic_weather
 
 
@@ -90,8 +90,11 @@ async def open_meteo(hass):
         await hass.async_block_till_done()
 
 
-async def setup_plant(hass, open_meteo):
-    """One plant ("Roof", sensor.pv) with 60 days of statistics, set up and refreshed."""
+async def setup_plant(hass, open_meteo, variants=False):
+    """One plant ("Roof", sensor.pv) with 60 days of statistics, set up and refreshed.
+
+    Only the standard variant is trained unless ``variants`` (four variants are slow to train).
+    """
     hass.states.async_set(
         "sensor.pv", "0", {"unit_of_measurement": "W", "state_class": "measurement"}
     )
@@ -100,7 +103,7 @@ async def setup_plant(hass, open_meteo):
     await async_wait_recording_done(hass)
     entry = MockConfigEntry(
         domain=DOMAIN,
-        options={CONF_EVCC: True},
+        options={CONF_EVCC: True, CONF_VARIANTS: variants},
         subentries_data=[
             ConfigSubentryData(
                 data={"name": "Roof", CONF_ENTITIES: ["sensor.pv"]},

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0 – 2026-10-13
+
+- **Model variants**: every week four variants are trained and scored on the same last 60 days –
+  Standard, Weather Plus (also humidity, dew point, rain, wind and visibility), Short term (recent
+  days count more: a 90-day half-life instead of a year) and Short term Weather Plus. A plant
+  switches to another variant only when it is at least 2 % better and consistently so over the
+  holdout days. New diagnostic sensor *Model variant* with every variant's score.
+- New option *Test model variants* (on by default); off trains only the standard variant.
+- After the update every plant retrains once (new inputs), and the training weather is downloaded
+  once more with the extra variables (a few minutes, cached afterwards).
+
 ## 0.8.0 – 2026-10-13
 
 - Forecast: the **P10–P90 band is calibrated per plant**. Every night the morning forecasts of the

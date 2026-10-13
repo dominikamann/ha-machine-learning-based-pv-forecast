@@ -13,6 +13,7 @@ from .evaluation import Correction
 from .features import build_features
 from .model import PlantModel, TrainResult, train
 from .nowcast import DEFAULT_TAU, DayFactor, adjust
+from .variants import Variant
 from .weather import WeatherData, cloud_total
 
 HOUR = 3600
@@ -120,6 +121,7 @@ def train_plant(
     active: PlantModel | None,
     limit_w: float | None,
     config_hash: str,
+    variants: tuple[Variant, ...] | None = None,
 ) -> TrainResult:
     """Train on every hour once per forecast lead (same-day, day ahead, ...)."""
     weathers = weather if isinstance(weather, list) else [weather]
@@ -127,7 +129,7 @@ def train_plant(
     times = np.concatenate([p[0] for p in parts])
     X = np.concatenate([p[1] for p in parts])
     y = np.concatenate([p[2] for p in parts])
-    result = train(times, X, y, now, active, limit_w)
+    result = train(times, X, y, now, active, limit_w, variants)
     result.model.config_hash = config_hash
     return result
 

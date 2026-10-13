@@ -28,6 +28,8 @@ datasheet says it should do.
 - **Learns from its own mistakes**: every issued forecast is archived and compared with what really
   happened; a correction layer and the weekly retraining use those errors, and a new model only
   replaces the old one when it is measurably better
+- **Four model variants, the best one per plant chosen automatically**: with or without extra
+  weather inputs (humidity, dew point, rain, wind, visibility), with a long or a short memory
 - Forecast in the **Energy dashboard**
 - Endpoint for **[evcc](https://evcc.io)**
 - Forecast error sensors per horizon, so you can watch the model improve
@@ -57,9 +59,9 @@ datasheet says it should do.
   The boosting is a small numpy implementation of the algorithm behind scikit-learn's
   `HistGradientBoostingRegressor` (tested against it), because scikit-learn cannot be installed on
   Home Assistant OS. The only extra dependency is scipy.
-- **Every night**: forecast error per horizon, correction layer, short-term decay and the weight of
-  the day so far; **every Sunday**:
-  retraining with a promotion gate.
+- **Every night**: forecast error per horizon, correction layer, short-term decay, the weight of
+  the day so far and the width of the P10–P90 band; **every Sunday**: retraining of every model
+  variant with a promotion gate.
 
 Open-Meteo's free API is for non-commercial use, which covers a private home. No API key is needed.
 The first training downloads several years of weather for five models; if Open-Meteo's per-minute
@@ -117,6 +119,7 @@ Per plant and for the total:
 | Forecast curve (state: today in kWh) | kWh | `hourly` (72 h, Wh per hour), `quarters` (W), `morning` (this morning's forecast for today, W) |
 | Forecast error 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count` |
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
+| Model variant | standard / weather_plus / short_memory / weather_plus_short_memory / fallback | `scores` (error of each variant at the last training, %), `since`, `testing` |
 | Production now | W | live sum of the plant's sensors (energy meters: rise over the last 5 min) |
 | Production today | kWh | from the 15-minute actuals the forecast is checked against (a few minutes behind) |
 | Hit rate yesterday, hit rate 7 days | % | how close the morning forecast came to the actual production (100 % − deviation); `forecast_kwh`, `actual_kwh`, `in_band`, `days`, `tendency_pct` (7 days: + too optimistic, − too pessimistic) |
@@ -127,6 +130,29 @@ after one to two days. The forecast error is the mean absolute error over the la
 (lower is better). `skill` compares with simply repeating the previous period (above 0 is better
 than that). Installations from before 0.6.1 keep their entity IDs (`…_accuracy_…`); only the
 names changed, so dashboards and automations keep working.
+
+## Model variants
+
+Not every plant is best served by the same model. Every Sunday the integration trains four
+variants on the same history and scores them on the same last 60 days, which none of them was
+trained on:
+
+| Variant | Inputs | Memory | Helps plants … |
+|---|---|---|---|
+| **Standard** | sun, irradiance, clouds, temperature, snow, several weather models | long (a year-old day counts half) | that stay as they are – most plants |
+| **Weather Plus** | + humidity, dew point, rain, wind, visibility | long | where fog, haze or rain matter (valleys, coast) |
+| **Short term** | like Standard | short (a 90-day-old day counts half) | that change: a growing tree, soiling, ageing, a new export limit |
+| **Short term Weather Plus** | like Weather Plus | short | both |
+
+The active variant only changes when another one is **at least 2 % better and consistently so**
+over the holdout days (checked day by day, so one lucky week does not cause a switch). The sensor
+*Model variant* shows the active variant, every variant's error at the last training and since
+when the variant runs. *Simple model* means the plain physical model beat every variant, which
+happens in the first weeks.
+
+Training four variants takes about three times as long as one. On a Raspberry Pi that is a few
+extra minutes once a week. To train only the standard variant, switch off *Test model variants*
+in the integration options.
 
 ## evcc
 

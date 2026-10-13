@@ -296,3 +296,27 @@ async def test_curve_names_its_plant(recorder_mock, hass, open_meteo):
     plant = hass.states.get(_entity(hass, entry, f"{plant_id}_curve")).attributes
     total = hass.states.get(_entity(hass, entry, "total_curve")).attributes
     assert plant["plant"] == "Roof" and total["plant"] is None
+
+
+@pytest.mark.all_variants
+async def test_model_variant_sensor_per_plant(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo, variants=True)
+    registry = er.async_get(hass)
+    ids = [e.unique_id for e in er.async_entries_for_config_entry(registry, entry.entry_id)]
+    assert not any(u.endswith("total_variant") for u in ids)  # the total has no model
+    state = hass.states.get(_entity(hass, entry, "_variant"))
+    # the synthetic plant is so regular that the simple model can beat every variant
+    assert state.state in (
+        "standard",
+        "weather_plus",
+        "short_memory",
+        "weather_plus_short_memory",
+        "fallback",
+    )
+    assert set(state.attributes["scores"]) == {
+        "standard",
+        "weather_plus",
+        "short_memory",
+        "weather_plus_short_memory",
+    }
+    assert state.attributes["since"] and state.attributes["testing"] is True

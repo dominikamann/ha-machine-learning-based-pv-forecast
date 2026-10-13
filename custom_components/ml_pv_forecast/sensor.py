@@ -29,6 +29,7 @@ from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 from .const import DOMAIN, TOTAL
 from .coordinator import MlPvCoordinator
 from .core.evaluation import tendency, today_so_far
+from .core.variants import STANDARD, VARIANTS
 from .history import EntityProblem, entity_kind
 
 _LOGGER = logging.getLogger(__name__)
@@ -93,6 +94,7 @@ def _entities(coordinator: MlPvCoordinator, plant_id: str) -> list[SensorEntity]
         ActualEnergyTodaySensor(coordinator, plant_id),
         HitRateSensor(coordinator, plant_id, "hit_rate_yesterday"),
         HitRateSensor(coordinator, plant_id, "hit_rate_week"),
+        *([] if plant_id == TOTAL else [VariantSensor(coordinator, plant_id)]),
     ]
 
 
@@ -336,6 +338,43 @@ class StatusSensor(ForecastEntity):
             "history_days": days,
             "full_year": None if days is None else days >= 365,
             "error": plant.error,
+        }
+
+
+class VariantSensor(ForecastEntity):
+    """Which model variant this plant runs, and how each variant scored at the last training."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [*(v.key for v in VARIANTS), "fallback"]
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:source-branch"
+
+    def __init__(self, coordinator, plant_id) -> None:
+        super().__init__(coordinator, plant_id, "variant")
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> str | None:
+        model = self.coordinator.plants[self._plant_id].model
+        if model is None:
+            return None
+        if model.kind != "gbm":
+            return "fallback"  # the simple model: first weeks, or it beat every variant
+        return vars(model).get("variant", STANDARD.key)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        plant = self.coordinator.plants[self._plant_id]
+        stored = vars(plant.model) if plant.model is not None else {}
+        since = stored.get("variant_since") or stored.get("trained_at")
+        return {
+            # holdout error of every variant at the last training, % of the actual energy
+            "scores": plant.variant_scores or stored.get("variant_scores", {}),
+            "since": _iso(since) if since else None,
+            "testing": len(self.coordinator.variants) > 1,
         }
 
 

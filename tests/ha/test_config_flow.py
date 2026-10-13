@@ -4,7 +4,13 @@ from homeassistant.config_entries import SOURCE_USER
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ml_pv_forecast.const import CONF_ENTITIES, CONF_EVCC, CONF_LIMIT_W, DOMAIN
+from custom_components.ml_pv_forecast.const import (
+    CONF_ENTITIES,
+    CONF_EVCC,
+    CONF_LIMIT_W,
+    CONF_VARIANTS,
+    DOMAIN,
+)
 
 SETUP = "custom_components.ml_pv_forecast.async_setup_entry"
 
@@ -99,4 +105,9 @@ async def test_options_flow_toggles_evcc(hass):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_EVCC: False}
     )
-    assert entry.options == {CONF_EVCC: False}
+    assert entry.options == {CONF_EVCC: False, CONF_VARIANTS: True}
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_EVCC: False, CONF_VARIANTS: False}
+    )
+    assert entry.options == {CONF_EVCC: False, CONF_VARIANTS: False}

@@ -1,7 +1,7 @@
 # Machine-Learning-Based PV Forecast
 
 [![CI](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/ci.yml/badge.svg)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/blob/main/LICENSE)
 
 **A PV forecast for Home Assistant that learns from your own history: no tilt, no azimuth, no kWp,
 no API key.**
@@ -246,7 +246,7 @@ installing.
 
 ### More templates
 
-[`docs/dashboards/`](docs/dashboards) contains further `apexcharts-card` templates:
+[`docs/dashboards/`](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/tree/main/docs/dashboards) contains further `apexcharts-card` templates:
 
 - `today.yaml` – actual production against this morning's forecast and the live forecast
 - `72h.yaml` – the next 72 hours per plant, stacked
@@ -341,7 +341,7 @@ redacted) for bug reports.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/blob/main/LICENSE).
 
 ---
 

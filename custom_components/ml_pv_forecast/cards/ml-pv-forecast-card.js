@@ -95,9 +95,21 @@ const DAY = 24 * HOUR;
 const FLUSH =
   "--ha-card-border-width:0;--ha-card-box-shadow:none;--ha-card-background:transparent;--ha-card-border-radius:0;";
 
-function isForecastCurve(state) {
+// Only this integration's curve sensors: another entity with the same attributes (a template or
+// MQTT sensor) must not get its text into the card.
+function isForecastCurve(state, hass) {
   const a = state && state.attributes;
+  const entry = hass?.entities?.[state?.entity_id];
+  if (hass?.entities && entry?.platform !== "ml_pv_forecast") return false;
   return !!a && Array.isArray(a.hourly) && Array.isArray(a.quarters) && a.daily !== undefined;
+}
+
+// Text from states or the card configuration goes into HTML strings: escape it.
+function escapeHtml(text) {
+  return String(text ?? "").replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+  );
 }
 
 // Bodies of apexcharts-card data_generator functions (they receive `entity`).
@@ -301,7 +313,7 @@ class MlPvForecastCard extends HTMLElement {
 
   _entityId() {
     if (this._config.entity) return this._config.entity;
-    const states = Object.values(this._hass.states).filter(isForecastCurve);
+    const states = Object.values(this._hass.states).filter((s) => isForecastCurve(s, this._hass));
     const total = states.find((s) => s.entity_id.includes("_total_"));
     return (total || states[0])?.entity_id;
   }
@@ -526,7 +538,7 @@ class MlPvForecastCard extends HTMLElement {
     if (this._view === "today") return items.overview.join("");
     if (this._view === "plants") {
       const plants = this._plantStates()
-        .map((p, i) => item(p.attributes.plant, PLANT_COLORS[i % PLANT_COLORS.length]))
+        .map((p, i) => item(escapeHtml(p.attributes.plant), PLANT_COLORS[i % PLANT_COLORS.length]))
         .join("");
       return `${plants}<span class="plain">${t.barsHint}</span>`;
     }
@@ -534,7 +546,9 @@ class MlPvForecastCard extends HTMLElement {
   }
 
   _headerHtml(state, t) {
-    const title = this._config.title ? `<div class="title">${this._config.title}</div>` : "";
+    const title = this._config.title
+      ? `<div class="title">${escapeHtml(this._config.title)}</div>`
+      : "";
     const label = {
       overview: t.overview,
       today: t.today,
@@ -919,7 +933,7 @@ MlPvForecastCard.prototype._dayName = function (offset, t) {
 
 MlPvForecastCard.prototype._plantStates = function () {
   return Object.values(this._hass.states)
-    .filter((s) => isForecastCurve(s) && s.attributes.plant)
+    .filter((s) => isForecastCurve(s, this._hass) && s.attributes.plant)
     .sort((a, b) => a.attributes.plant.localeCompare(b.attributes.plant));
 };
 
@@ -935,10 +949,10 @@ MlPvForecastCard.prototype._plantsTable = function (t) {
     const cells = days
       .map((_, d) => `<td>${this._kwh(daily[keys[d]])}${d === 0 ? sofar(p) : ""}</td>`)
       .join("");
-    return `<tr><td style="--c:${PLANT_COLORS[i % PLANT_COLORS.length]}">${p.attributes.plant}</td>${cells}</tr>`;
+    return `<tr><td style="--c:${PLANT_COLORS[i % PLANT_COLORS.length]}">${escapeHtml(p.attributes.plant)}</td>${cells}</tr>`;
   });
   const total = Object.values(this._hass.states).find(
-    (s) => isForecastCurve(s) && !s.attributes.plant
+    (s) => isForecastCurve(s, this._hass) && !s.attributes.plant
   );
   if (total && rows.length > 1) {
     const daily = total.attributes.daily || {};

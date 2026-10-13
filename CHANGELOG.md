@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Card: plant names and the card title are escaped before they go into the page, and the card
+  only uses this integration's sensors (before, any entity with the same attributes was picked up,
+  and its text could run as code in the dashboard).
 - **The correction layer is only switched on when it reliably helps.** It must now be at least
   2 % better than the plain model and consistently so over the 14 validation days (the same test
   as for model variants); before, any gain counted. In a test where the model was right on

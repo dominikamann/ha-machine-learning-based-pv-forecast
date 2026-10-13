@@ -205,6 +205,42 @@ async def test_day_factor_compares_today_so_far_with_the_forecast(recorder_mock,
     assert coordinator._day_factor(plant, midnight) is None  # nothing measured yet today
 
 
+async def test_band_is_calibrated_from_the_morning_curves(recorder_mock, hass, open_meteo):
+    from datetime import timedelta as td
+
+    import numpy as np
+    from homeassistant.util import dt as dt_util
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    assert plant.band == (1.0, 1.0)
+    rng = np.random.default_rng(0)
+    cap = plant.model.capacity
+    for back in range(1, 15):
+        day = dt_util.now().date() - td(days=back)
+        start = int(dt_util.start_of_local_day(day).timestamp())
+        quarters = start + np.arange(96) * 900
+        sun = (np.arange(96) >= 32) & (np.arange(96) < 64)
+        p50 = np.where(sun, 0.1 * cap, 0.0)  # Wh per quarter
+        curve = [[int(t), 0.95 * v, v, 1.05 * v] for t, v in zip(quarters, p50, strict=True)]
+        actual = np.maximum(p50 * (1 + rng.normal(0, 0.2, 96)), 0.0)
+        await hass.async_add_executor_job(
+            coordinator.archive.save_curve, plant.plant_id, day.isoformat(), curve
+        )
+        await hass.async_add_executor_job(
+            coordinator.archive.add_actuals, plant.plant_id, quarters, actual
+        )
+    await coordinator.async_evaluate(dt_util.utcnow())
+    assert plant.band[0] > 1.5 and plant.band[1] > 1.5  # a +-5 % band is far too narrow
+    await coordinator.async_refresh()
+    fc = coordinator.data[plant.plant_id]
+    assert (
+        (fc.quarter[:, 2] - fc.quarter[:, 1])
+        >= (fc.quarter_raw[:, 2] - fc.quarter_raw[:, 1]) - 1e-6
+    ).all()
+
+
 def test_morning_forecast_only_frozen_in_the_morning():
     from datetime import datetime
     from zoneinfo import ZoneInfo

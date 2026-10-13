@@ -7,6 +7,7 @@ from functools import reduce
 
 import numpy as np
 
+from .band import NEUTRAL, widen
 from .downscale import to_quarters
 from .evaluation import Correction
 from .features import build_features
@@ -149,6 +150,7 @@ def forecast_plant(
     ratio: float | None = None,
     tau: float = DEFAULT_TAU,
     day: DayFactor | None = None,
+    band: tuple[float, float] = NEUTRAL,
 ) -> PlantForecast:
     times = weather_hourly.times
     hourly = model.predict(build_features(with_lead(weather_hourly, now), latitude, longitude))
@@ -171,6 +173,8 @@ def forecast_plant(
         if ratio is not None or day is not None
         else quarter_raw.copy()
     )
+    if band != NEUTRAL:
+        hourly, quarter = widen(hourly, band), widen(quarter, band)
     return PlantForecast(
         plant_id,
         now,

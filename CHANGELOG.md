@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0 – 2026-10-13
+
+- Forecast: the **P10–P90 band is calibrated per plant**. Every night the morning forecasts of the
+  last 60 days are compared with what was produced: about a tenth of the hours should fall below
+  P10 and a tenth above P90. Each half of the band is widened or narrowed by half of what was off
+  (from about a week of data on). In a backtest over a year this kept a well calibrated plant as
+  sharp as before (74 → 78 % of the hours in the band) and helped a plant with outages a lot
+  (56 → 64 %, P10 error 36 → 28).
+- The archive keeps the band scale each morning forecast was issued with, so the calibration
+  does not feed on itself; existing archives are migrated.
+
 ## 0.7.0 – 2026-10-13
 
 - Forecast: the short-term correction also uses **the day so far**. If today's production has been

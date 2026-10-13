@@ -128,3 +128,20 @@ def test_day_so_far_lifts_the_later_hours_and_is_recorded():
     np.testing.assert_allclose(lifted.quarter_raw, plain.quarter_raw)
     assert (lifted.day_ratio, lifted.day_share) == (1.4, 0.5)
     assert (plain.day_ratio, plain.day_share) == (None, None)
+
+
+def test_band_scale_widens_hourly_and_quarter_bands_but_not_p50():
+    w = synthetic_weather(START_2024, 60 * 24)
+    y = synthetic_production(w)
+    now = int(w.times[-1]) + 3600
+    model = train_plant(w.times, y, w, LAT, LON, now, None, None, "h").model
+    hourly = synthetic_weather(now, 48, seed=5)
+    quarter = synthetic_weather(now, 192, interval=900, seed=5)
+    plain = forecast_plant("a", model, hourly, quarter, LAT, LON, now)
+    wide = forecast_plant("a", model, hourly, quarter, LAT, LON, now, band=(1.5, 2.0))
+    np.testing.assert_allclose(wide.quarter[:, 1], plain.quarter[:, 1])
+    np.testing.assert_allclose(wide.hourly[:, 1], plain.hourly[:, 1])
+    np.testing.assert_allclose(wide.quarter_raw, plain.quarter_raw)
+    up = plain.quarter[:, 2] - plain.quarter[:, 1]
+    np.testing.assert_allclose(wide.quarter[:, 2] - wide.quarter[:, 1], 2.0 * up, atol=1e-6)
+    assert (wide.hourly[:, 2] >= plain.hourly[:, 2]).all()

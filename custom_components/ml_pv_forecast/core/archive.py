@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS actuals (
 );
 CREATE INDEX IF NOT EXISTS forecasts_plant_start ON forecasts (plant, start);
 CREATE TABLE IF NOT EXISTS curves (
-    plant TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (plant, day)
+    plant TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL, band_lo REAL, band_hi REAL,
+    PRIMARY KEY (plant, day)
 );
 """
 
@@ -103,6 +104,11 @@ class Archive:
                 columns = FORECAST_COLUMNS
             if columns != FORECAST_COLUMNS:
                 raise sqlite3.DatabaseError("outdated archive schema")
+            curve_columns = [row[1] for row in db.execute("PRAGMA table_info(curves)")]
+            with db:
+                for name in ("band_lo", "band_hi"):
+                    if name not in curve_columns:
+                        db.execute(f"ALTER TABLE curves ADD COLUMN {name} REAL")
         except sqlite3.DatabaseError:
             db.close()
             raise
@@ -171,14 +177,34 @@ class Archive:
             ).fetchall()
         return np.array([r[0] for r in rows], dtype=np.int64), np.array([r[1] for r in rows])
 
-    def save_curve(self, plant: str, day: str, data: list) -> None:
+    def save_curve(
+        self, plant: str, day: str, data: list, band: tuple[float, float] = (1.0, 1.0)
+    ) -> None:
+        """Store a morning curve with the band scale (lower, upper) that was applied to it."""
         with self._lock:
             if self._closed:
                 return
             with self._db:
                 self._db.execute(
-                    "INSERT OR REPLACE INTO curves VALUES (?,?,?)", (plant, day, json.dumps(data))
+                    "INSERT OR REPLACE INTO curves (plant, day, data, band_lo, band_hi)"
+                    " VALUES (?,?,?,?,?)",
+                    (plant, day, json.dumps(data), float(band[0]), float(band[1])),
                 )
+
+    def curves_since(self, plant: str, first_day: str) -> list[tuple[str, list, tuple]]:
+        """Morning curves from ``first_day`` on, oldest first, with their band scale."""
+        with self._lock:
+            if self._closed:
+                return []
+            rows = self._db.execute(
+                "SELECT day, data, band_lo, band_hi FROM curves"
+                " WHERE plant=? AND day>=? ORDER BY day",
+                (plant, first_day),
+            ).fetchall()
+        return [
+            (day, json.loads(data), (1.0 if lo is None else lo, 1.0 if hi is None else hi))
+            for day, data, lo, hi in rows
+        ]
 
     def load_curve(self, plant: str, day: str) -> list | None:
         with self._lock:

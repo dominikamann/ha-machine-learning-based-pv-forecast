@@ -22,6 +22,8 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_ENTITIES, CONF_LIMIT_W, DOMAIN, SUBENTRY_PLANT, TOTAL
 from .core.archive import Archive, ArchivedForecast
+from .core.band import NEUTRAL, fit_band, hourly_rows
+from .core.band import WINDOW_DAYS as BAND_WINDOW_DAYS
 from .core.evaluation import (
     Correction,
     Metrics,
@@ -93,6 +95,7 @@ class PlantRuntime:
     tau: float = DEFAULT_TAU
     day_weight: float = DEFAULT_DAY_WEIGHT
     day_tau: float = DEFAULT_DAY_TAU
+    band: tuple[float, float] = NEUTRAL
     problem_since: datetime | None = None
     retry_at: datetime | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -391,6 +394,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 ratio,
                 plant.tau,
                 self._day_factor(plant, midnight),
+                plant.band,
             )
         if not forecasts:
             return {}
@@ -455,6 +459,20 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             ratio, min(1.0, forecast_done / day_total), plant.day_weight, plant.day_tau
         )
 
+    def _fit_band(self, key: str, capacity: float) -> tuple[float, float]:
+        """Band scale from the finished days' morning curves against what was produced."""
+        today = dt_util.now().date()
+        first = (today - timedelta(days=BAND_WINDOW_DAYS)).isoformat()
+        parts = []
+        for day, curve, applied in self.archive.curves_since(key, first):
+            if day >= today.isoformat() or not curve:
+                continue
+            times, wh = self.archive.actuals(key, int(curve[0][0]), int(curve[-1][0]) + 900)
+            parts.append(hourly_rows(curve, applied, times, wh))
+        if not parts:
+            return NEUTRAL
+        return fit_band(*(np.concatenate([p[i] for p in parts]) for i in range(4)), capacity)
+
     def _daily_windows(self, now: datetime) -> tuple[int, int, int, str] | None:
         local = dt_util.as_local(now)
         day = local.date().isoformat()
@@ -489,7 +507,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                         [int(t), *map(float, v)]
                         for t, v in zip(fc.quarter_times[mask], fc.quarter[mask], strict=True)
                     ]
-                    self.archive.save_curve(key, day, curve)
+                    band = self.plants[key].band if key in self.plants else NEUTRAL
+                    self.archive.save_curve(key, day, curve, band)
                     self.morning[key] = curve
             for horizon, w_start, w_end in windows:
                 p = fc.energy(w_start, w_end)
@@ -609,6 +628,10 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 plant.day_weight, plant.day_tau = await self.hass.async_add_executor_job(
                     day_from_rows, rows, plant.tau
                 )
+                if plant.model is not None:
+                    plant.band = await self.hass.async_add_executor_job(
+                        self._fit_band, key, plant.model.capacity
+                    )
         await self.async_update_review()
         cutoff = now - RETENTION
         await self.hass.async_add_executor_job(

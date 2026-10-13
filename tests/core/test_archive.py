@@ -137,3 +137,34 @@ def test_archive_from_before_the_day_factor_is_migrated_not_replaced(tmp_path):
     rows = ar.evaluated("a", None, 0, 10**9)
     assert len(rows) == 1 and rows[0].forecast.day_ratio is None
     ar.close()
+
+
+def test_curves_keep_the_band_scale_they_were_issued_with(tmp_path):
+    ar = Archive(tmp_path / "a.db")
+    ar.save_curve("a", "2026-10-11", [[0, 1, 2, 3]], (1.2, 1.1))
+    ar.save_curve("a", "2026-10-12", [[0, 1, 2, 3]])
+    ar.save_curve("b", "2026-10-12", [[0, 1, 2, 3]])
+    assert ar.curves_since("a", "2026-10-01") == [
+        ("2026-10-11", [[0, 1, 2, 3]], (1.2, 1.1)),
+        ("2026-10-12", [[0, 1, 2, 3]], (1.0, 1.0)),
+    ]
+    assert ar.curves_since("a", "2026-10-12") == [("2026-10-12", [[0, 1, 2, 3]], (1.0, 1.0))]
+    ar.close()
+
+
+def test_curves_from_before_the_band_scale_are_migrated(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "a.db"
+    old = sqlite3.connect(path)
+    old.executescript(
+        """CREATE TABLE curves (plant TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL,
+            PRIMARY KEY (plant, day));
+        INSERT INTO curves VALUES ('a', '2026-10-11', '[[0, 1, 2, 3]]');"""
+    )
+    old.close()
+    ar = Archive(path)
+    assert not ar.recovered
+    assert ar.curves_since("a", "2026-10-01") == [("2026-10-11", [[0, 1, 2, 3]], (1.0, 1.0))]
+    assert ar.load_curve("a", "2026-10-11") == [[0, 1, 2, 3]]
+    ar.close()

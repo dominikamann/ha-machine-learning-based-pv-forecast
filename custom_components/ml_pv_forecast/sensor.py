@@ -178,7 +178,7 @@ class CurveSensor(ForecastEntity):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _unrecorded_attributes = frozenset(
-        {"hourly", "quarters", "morning", "actual", "daily", "review", "today"}
+        {"hourly", "quarters", "morning", "actual", "daily", "review", "today", "past"}
     )
 
     def __init__(self, coordinator, plant_id) -> None:
@@ -257,6 +257,11 @@ class CurveSensor(ForecastEntity):
                 for row in rows(fc.hour_times, fc.hourly, w.today, w.day_after_end, 1.0)
             ],
             "quarters": rows(fc.quarter_times, fc.quarter, w.today, w.now + 86400, 4.0),
+            # today's past hours as the live forecast saw them just before (W)
+            "past": [
+                {"time": _iso(t), "p10": round(a, 1), "p50": round(b, 1), "p90": round(c, 1)}
+                for t, a, b, c in self.coordinator.past_hours.get(self._plant_id, [])
+            ],
             "morning": [
                 {
                     "time": _iso(t),

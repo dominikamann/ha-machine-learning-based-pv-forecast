@@ -109,11 +109,14 @@ const hourlyAverage = (source, field) => `
     });
     return Object.entries(hours).map(([t, v]) => [Number(t), v.reduce((a, b) => a + b, 0) / v.length / 1000]);`;
 const GEN = {
-  // The live forecast from the current hour on: hourly averages of the 15-minute values (they are
-  // corrected by the current production) while they last, the hourly values after that. Past
-  // hours are left out – the bars show them.
+  // The live forecast: for past hours what it said just before each hour began (archived), from
+  // the current hour on the hourly averages of the 15-minute values (corrected by the current
+  // production) while they last, the hourly values after that.
   live: (key) => `
     const hour = new Date(); hour.setMinutes(0, 0, 0);
+    const past = (entity.attributes.past || [])
+      .map(r => [new Date(r.time).getTime(), r.${key} / 1000])
+      .filter(([t]) => t < hour.getTime());
     const sums = {};
     (entity.attributes.quarters || []).forEach(r => {
       const t = new Date(r.time); t.setMinutes(0, 0, 0);
@@ -126,7 +129,7 @@ const GEN = {
     const hours = (entity.attributes.hourly || [])
       .map(r => [new Date(r.time).getTime(), r.${key} / 1000])
       .filter(([t]) => t > last);
-    return [...quarters, ...hours];`,
+    return [...past, ...quarters, ...hours];`,
   morning: hourlyAverage("entity.attributes.morning", "p50"),
   actual: hourlyAverage("entity.attributes.actual", "w"),
   // Sum of the hourly P50 of several plants (apexcharts-card passes `hass` to generators).
@@ -752,7 +755,7 @@ class MlPvForecastCard extends HTMLElement {
     }
     // Overview: one chart per day, each covering only the hours with sun, sharing one kW scale.
     // the corrected 15-minute values can lie above the hourly ones, so both set the scale
-    const hourly = [...(a.hourly || []), ...(a.quarters || [])].map((r) => [
+    const hourly = [...(a.hourly || []), ...(a.quarters || []), ...(a.past || [])].map((r) => [
       new Date(r.time).getTime(),
       r.p90 / 1000,
     ]);
@@ -862,7 +865,9 @@ MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
     entity,
     start: localMidnight(),
     hours: this._config.days * 24,
-    max: this._maxKw([...(a.hourly || []), ...(a.quarters || [])].map((r) => r.p90 / 1000)),
+    max: this._maxKw(
+      [...(a.hourly || []), ...(a.quarters || []), ...(a.past || [])].map((r) => r.p90 / 1000)
+    ),
     yAxis: true,
     now: true,
     height: 260,

@@ -208,7 +208,7 @@ type: custom:ml-pv-forecast-card
 Five views, switched with the tabs at the top of the card:
 
 - **Overview** – one chart per day, covering only the hours with sun: hourly bars of the actual
-  production (green), the live forecast (blue, from the current hour on, corrected by the current production) with its P10–P90 range and this morning's forecast
+  production (green), the live forecast (blue; for past hours what it expected shortly before each hour, from the current hour on corrected by the current production) with its P10–P90 range and this morning's forecast
   (violet, dashed), with the day's totals, the prevailing weather and the highest temperature
   above each chart, and small weather symbols along the top (hours with sun only). All days share one kW scale.
   `layout: timeline` shows all days in one continuous chart instead.

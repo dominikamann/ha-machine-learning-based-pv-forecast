@@ -320,3 +320,39 @@ async def test_model_variant_sensor_per_plant(recorder_mock, hass, open_meteo):
         "weather_plus_short_memory",
     }
     assert state.attributes["since"] and state.attributes["testing"] is True
+
+
+async def test_curve_shows_the_forecast_issued_before_each_past_hour(
+    recorder_mock, hass, open_meteo
+):
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.ml_pv_forecast.core.archive import ArchivedForecast
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    midnight = int(dt_util.start_of_local_day().timestamp())
+    rows = [
+        ArchivedForecast(
+            "total",
+            "1h",
+            h - 600,
+            h,
+            h + 3600,
+            80.0,
+            100.0,
+            120.0,
+            100.0,
+            100.0,
+            None,
+            20.0,
+            1000.0,
+        )
+        for h in (midnight + 8 * 3600, midnight + 9 * 3600)
+    ]
+    await hass.async_add_executor_job(coordinator.archive.add_forecasts, rows)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    past = hass.states.get(_entity(hass, entry, "total_curve")).attributes["past"]
+    eight = dt_util.utc_from_timestamp(midnight + 8 * 3600).isoformat()
+    assert {"time": eight, "p10": 80.0, "p50": 100.0, "p90": 120.0} in past

@@ -177,6 +177,23 @@ class Archive:
             ).fetchall()
         return np.array([r[0] for r in rows], dtype=np.int64), np.array([r[1] for r in rows])
 
+    def hour_forecasts(
+        self, plant: str, since: int, until: int
+    ) -> list[tuple[int, float, float, float]]:
+        """For each full hour starting in [since, until): the next-hour forecast issued last
+        before it began, as (start, P10, P50, P90) in Wh."""
+        with self._lock:
+            if self._closed:
+                return []
+            rows = self._db.execute(
+                "SELECT start, p10, p50, p90 FROM forecasts"
+                " WHERE plant=? AND horizon='1h' AND start>=? AND start<? AND start % 3600 = 0"
+                " ORDER BY start, issued_at",
+                (plant, since, until),
+            ).fetchall()
+        latest = {int(r[0]): (int(r[0]), float(r[1]), float(r[2]), float(r[3])) for r in rows}
+        return list(latest.values())
+
     def save_curve(
         self, plant: str, day: str, data: list, band: tuple[float, float] = (1.0, 1.0)
     ) -> None:

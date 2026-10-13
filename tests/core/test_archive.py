@@ -168,3 +168,19 @@ def test_curves_from_before_the_band_scale_are_migrated(tmp_path):
     assert ar.curves_since("a", "2026-10-01") == [("2026-10-11", [[0, 1, 2, 3]], (1.0, 1.0))]
     assert ar.load_curve("a", "2026-10-11") == [[0, 1, 2, 3]]
     ar.close()
+
+
+def test_hour_forecasts_issued_just_before_each_hour(tmp_path):
+    ar = Archive(tmp_path / "a.db")
+    ar.add_forecasts(
+        [
+            fc(3600, 7200, 500.0, issued=3000),  # issued 10 minutes before the hour: used
+            fc(4500, 8100, 400.0, issued=3900),  # starts at a quarter, not an hour: skipped
+            fc(7200, 10800, 300.0, issued=6900),
+            fc(7200, 9000, 9.0, horizon="30m", issued=6900),  # other horizon
+        ]
+    )
+    rows = ar.hour_forecasts("a", 0, 7201)
+    assert rows == [(3600, 400.0, 500.0, 600.0), (7200, 240.0, 300.0, 360.0)]
+    assert ar.hour_forecasts("a", 3601, 7200) == []
+    ar.close()

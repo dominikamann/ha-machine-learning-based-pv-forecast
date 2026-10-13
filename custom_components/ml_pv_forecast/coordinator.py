@@ -133,6 +133,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         self.metrics: dict[str, dict[str, Metrics]] = {}
         self.morning: dict[str, list] = {}
         self.actual_today: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        # today's past hours: the next-hour forecast issued just before each (start, P10-P90)
+        self.past_hours: dict[str, list[tuple[int, float, float, float]]] = {}
         self.review: dict[str, list[dict]] = {}  # last REVIEW_DAYS days, newest first
         self.weather_fetched_at: datetime | None = None
         self._weather: tuple[WeatherData, WeatherData] | None = None
@@ -548,6 +550,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             self.archive.add_actuals(key, times, wh)
         for key in forecasts:
             self.actual_today[key] = self.archive.actuals(key, midnight, now + 900)
+            self.past_hours[key] = self.archive.hour_forecasts(key, midnight, now + 1)
 
     # ---- training and evaluation -----------------------------------------------------------
 

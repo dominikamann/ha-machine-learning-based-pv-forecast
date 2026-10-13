@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Card: the forecast line and its P10–P90 range now also cover today's past hours, showing what
+  the live forecast expected for each hour shortly before it began (from the archived next-hour
+  forecasts), next to the morning forecast and the actual bars.
 - **Capped plants are no longer forecast too low.** Hours at an export or inverter limit used to
   be dropped before training, which left only the weaker hours at high irradiance: in a test with
   a plant capped at 60 % of its peak the forecast was 5 % too low in the capped hours and 2 % over

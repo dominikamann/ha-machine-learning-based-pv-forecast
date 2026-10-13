@@ -54,3 +54,29 @@ def test_no_ensemble_gives_nan_not_crash():
     X = build_features(synthetic_weather(START_2024, 3), LAT, LON)
     assert X[:, col("ens_count")].tolist() == [0.0] * 3
     assert np.isnan(X[:, col("ens_ghi_mean")]).all()
+
+
+def test_humidity_fog_wind_and_precipitation_features():
+    from dataclasses import replace
+
+    w = synthetic_weather(START_2024 + 180 * 86400, 2)
+    w = replace(
+        w,
+        temperature=np.array([12.0, 20.0]),
+        dew_point=np.array([11.5, 5.0]),
+        humidity=np.array([97.0, 40.0]),
+        precipitation=np.array([0.0, 1.2]),
+        wind_speed=np.array([3.0, 25.0]),
+        visibility=np.array([150.0, 24000.0]),
+    )
+    X = build_features(w, LAT, LON)
+    np.testing.assert_allclose(X[:, col("dew_point_spread")], [0.5, 15.0])
+    assert X[:, col("humidity")].tolist() == [97.0, 40.0]
+    assert X[:, col("precipitation")].tolist() == [0.0, 1.2]
+    assert X[:, col("wind_speed")].tolist() == [3.0, 25.0]
+    assert X[:, col("visibility")].tolist() == [150.0, 24000.0]
+
+
+def test_weather_without_humidity_gives_nan_features():
+    X = build_features(synthetic_weather(START_2024, 3), LAT, LON)
+    assert np.isnan(X[:, col("humidity")]).all() and np.isnan(X[:, col("dew_point_spread")]).all()

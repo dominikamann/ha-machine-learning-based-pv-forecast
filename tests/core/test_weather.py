@@ -224,3 +224,21 @@ def test_weather_code_is_parsed_when_present():
     assert w.weather_code.tolist() == [61.0]
     plain = parse_block({"hourly": block([7200])}, "hourly", HOUR, False)
     assert np.isnan(plain.weather_code).all()
+
+
+def test_humidity_wind_precipitation_and_visibility_are_parsed():
+    payload = {
+        "hourly": {
+            **block([7200]),
+            "relative_humidity_2m": [97],
+            "dew_point_2m": [4.5],
+            "precipitation": [0.3],
+            "wind_speed_10m": [12.0],
+            "visibility": [180.0],
+        }
+    }
+    w = parse_block(payload, "hourly", HOUR, False)
+    assert (w.humidity[0], w.dew_point[0], w.precipitation[0]) == (97.0, 4.5, 0.3)
+    assert (w.wind_speed[0], w.visibility[0]) == (12.0, 180.0)
+    old = parse_block({"hourly": block([7200])}, "hourly", HOUR, False)
+    assert np.isnan(old.humidity).all() and np.isnan(old.visibility).all()

@@ -130,3 +130,34 @@ def test_day_review_without_morning_forecast_or_with_gaps():
     assert review["forecast_kwh"] is None and review["hit_rate"] is None
     assert review["actual_kwh"] == pytest.approx(2.0)
     assert review["complete"] is False
+
+
+def test_today_so_far_scores_only_finished_hours():
+    from custom_components.ml_pv_forecast.core.evaluation import today_so_far
+
+    day = 86400 * 100
+    quarters = day + np.arange(96) * 900
+    sun = (np.arange(96) >= 32) & (np.arange(96) < 64)  # 08:00–16:00
+    curve = [[int(t), 80.0 * s, 100.0 * s, 120.0 * s] for t, s in zip(quarters, sun, strict=True)]
+    # Actuals up to 10:45 (the 10 o'clock hour is still running): only 08:00–10:00 count.
+    done = quarters < day + 10 * 3600 + 45 * 60
+    actual = np.where(sun, 90.0, 0.0)[done]
+    today = today_so_far(curve, quarters[done], actual, day, day + 86400)
+    assert today["actual_kwh"] == pytest.approx(0.99)  # all 11 producing quarters so far
+    assert today["forecast_kwh"] == pytest.approx(3.2)  # the whole morning forecast
+    assert today["hit_rate"] == pytest.approx(88.9, abs=0.1)  # 720 Wh against 800 Wh, 08–10
+    assert today["in_band"] == 100.0
+    assert today["until"] == day + 10 * 3600
+
+
+def test_today_so_far_before_sunrise_or_without_morning_forecast():
+    from custom_components.ml_pv_forecast.core.evaluation import today_so_far
+
+    day = 86400 * 100
+    quarters = day + np.arange(24) * 900  # until 06:00, nothing produced
+    curve = [[int(t), 0.0, 0.0, 0.0] for t in day + np.arange(96) * 900]
+    today = today_so_far(curve, quarters, np.zeros(24), day, day + 86400)
+    assert today["hit_rate"] is None and today["in_band"] is None
+    nothing = today_so_far(None, np.array([]), np.array([]), day, day + 86400)
+    assert nothing["actual_kwh"] == 0.0 and nothing["forecast_kwh"] is None
+    assert nothing["hit_rate"] is None and nothing["until"] is None

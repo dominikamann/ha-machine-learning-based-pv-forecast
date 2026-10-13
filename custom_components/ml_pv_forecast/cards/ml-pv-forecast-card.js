@@ -1,8 +1,9 @@
 /*
  * PV forecast card for the Machine-Learning-Based PV Forecast integration.
  *
- * Four views, switched with the tabs at the top:
+ * Five views, switched with the tabs at the top:
  *   overview – today and the next days, one chart per day covering only the hours with sun
+ *   today    – today only: production so far, expected total and the hit rate so far
  *   carousel – one day at a time (today, tomorrow, ...), switching automatically
  *   plants   – the next days per plant, stacked
  *   review   – the last 7 days: morning forecast against actual production and the hit rate
@@ -11,10 +12,11 @@
  *   type: custom:ml-pv-forecast-card
  *   entity: sensor.pv_forecast_total_forecast_curve   # optional, found automatically
  *   days: 3                                            # overview: 1–3, optional
- *   view: overview              # start view: overview | carousel | plants | review
+ *   views: [overview, today, carousel, plants, review]  # tabs shown, in this order
+ *   view: overview              # start view, one of views (default: the first)
  *   interval: 10                                       # carousel: seconds per day
  *   layout: stacked                                    # overview: stacked | timeline
- *   tabs: true                                         # false shows only the start view
+ *   tabs: true                     # false (or a single view) shows only the start view
  *   title: PV                                          # optional, no title by default
  */
 
@@ -35,6 +37,9 @@ const TEXT = {
     tomorrow: "Tomorrow",
     dayAfter: "Day after tomorrow",
     sofar: "so far",
+    produced: "Produced so far",
+    expected: "Expected today",
+    until: "until",
     hitRate: "Hit rate",
     inBand: "Hours in range",
     noMorning: "No morning forecast was recorded for this day.",
@@ -59,6 +64,9 @@ const TEXT = {
     tomorrow: "Morgen",
     dayAfter: "Übermorgen",
     sofar: "bisher",
+    produced: "Bisher erzeugt",
+    expected: "Erwartet heute",
+    until: "bis",
     hitRate: "Trefferquote",
     inBand: "Stunden im Band",
     noMorning: "Für diesen Tag wurde keine Morgenprognose gespeichert.",
@@ -71,7 +79,7 @@ const TEXT = {
 };
 
 const COLORS = { forecast: "#29B6F6", band: "#81D4FA", actual: "#66BB6A", morning: "#B39DDB" };
-const VIEWS = ["overview", "carousel", "plants", "review"];
+const VIEWS = ["overview", "today", "carousel", "plants", "review"];
 const PLANT_COLORS = ["#29B6F6", "#FFCA28", "#AB47BC", "#26A69A", "#EF5350", "#8D6E63"];
 // Lighter shades of the plant colours for the actual-production lines drawn over the areas.
 const PLANT_LIGHT = ["#E1F5FE", "#FFF8E1", "#F3E5F5", "#E0F2F1", "#FFEBEE", "#EFEBE9"];
@@ -225,14 +233,17 @@ class MlPvForecastCard extends HTMLElement {
   setConfig(config) {
     const days = Number(config.days ?? 3);
     if (!(days >= 1 && days <= 3)) throw new Error("days must be 1, 2 or 3");
-    // The former "today" view was removed; existing cards fall back to the overview.
-    const view = config.view === "today" ? "overview" : config.view ?? "overview";
-    if (!VIEWS.includes(view)) throw new Error(`view must be one of ${VIEWS.join(", ")}`);
+    const views = config.views ?? VIEWS;
+    if (!Array.isArray(views) || !views.length || views.some((v) => !VIEWS.includes(v))) {
+      throw new Error(`views must be a list of ${VIEWS.join(", ")}`);
+    }
+    const view = config.view ?? views[0];
+    if (!views.includes(view)) throw new Error(`view must be one of ${views.join(", ")}`);
     const interval = Number(config.interval ?? 10);
     if (!(interval >= 2)) throw new Error("interval must be at least 2 seconds");
     const layout = config.layout ?? "stacked";
     if (!["stacked", "timeline"].includes(layout)) throw new Error("layout must be stacked or timeline");
-    this._config = { tabs: true, ...config, days, view, interval, layout };
+    this._config = { tabs: true, ...config, days, views: [...new Set(views)], view, interval, layout };
     this._view = view;
     this._reviewIndex = 0;
     this._dayIndex = 0;
@@ -484,6 +495,7 @@ class MlPvForecastCard extends HTMLElement {
     if (this._view === "carousel") {
       return (this._dayIndex === 0 ? items.overview : items.forecast).join("");
     }
+    if (this._view === "today") return items.overview.join("");
     if (this._view === "plants") {
       const plants = this._plantStates()
         .map((p, i) => item(p.attributes.plant, PLANT_COLORS[i % PLANT_COLORS.length]))
@@ -495,22 +507,27 @@ class MlPvForecastCard extends HTMLElement {
 
   _headerHtml(state, t) {
     const title = this._config.title ? `<div class="title">${this._config.title}</div>` : "";
-    const tabs = this._config.tabs
-      ? `<div class="tabs">${VIEWS.map(
-          (v) =>
-            `<button class="tab ${v === this._view ? "active" : ""}" data-view="${v}">${
-              {
-                overview: t.overview,
-                carousel: t.carousel,
-                plants: t.plants,
-                review: t.review,
-              }[v]
-            }</button>`
-        ).join("")}</div>`
-      : "";
+    const label = {
+      overview: t.overview,
+      today: t.today,
+      carousel: t.carousel,
+      plants: t.plants,
+      review: t.review,
+    };
+    const { views } = this._config;
+    const tabs =
+      this._config.tabs && views.length > 1
+        ? `<div class="tabs">${views
+            .map(
+              (v) =>
+                `<button class="tab ${v === this._view ? "active" : ""}" data-view="${v}">${label[v]}</button>`
+            )
+            .join("")}</div>`
+        : "";
     const top = title + tabs;
     if (this._view === "review") return top + this._reviewStats(state, t);
     if (this._view === "carousel") return top + this._carouselStats(state, t);
+    if (this._view === "today") return top + this._todayStats(state, t);
     if (this._view === "plants") return top + this._plantsTable(t);
     return top;
   }
@@ -544,6 +561,35 @@ class MlPvForecastCard extends HTMLElement {
       this._kwh(value),
       i === 0 ? `${t.sofar} ${this._kwh(actualKwh)}` : undefined
     )}</div><div class="dots">${dots}</div>`;
+  }
+
+  _todayStats(state, t) {
+    const a = state.attributes;
+    const today = a.today || {};
+    const actual = a.actual || [];
+    // Expected: what was produced so far plus the live forecast for the rest of the day.
+    const done = actual.length ? new Date(actual[actual.length - 1].time).getTime() + 15 * 60000 : 0;
+    const tomorrow = localMidnight(1);
+    const rest = (a.quarters || [])
+      .filter((r) => {
+        const t0 = new Date(r.time).getTime();
+        return t0 >= Math.max(done, Date.now() - 15 * 60000) && t0 < tomorrow;
+      })
+      .reduce((sum, r) => sum + r.p50, 0);
+    const produced = actual.reduce((sum, r) => sum + r.w, 0) / 4 / 1000;
+    // Fallback while the integration is older than the card (no `today` attribute yet).
+    const morningKwh = a.morning?.length
+      ? a.morning.reduce((sum, r) => sum + r.p50, 0) / 4 / 1000
+      : undefined;
+    const pct = (v) => (v === null || v === undefined ? "–" : `${Math.round(v)} %`);
+    const until = today.until ? `${t.until} ${this._time(today.until)}` : undefined;
+    return `<div class="stats">${[
+      this._stat(t.produced, this._kwh(produced)),
+      this._stat(t.expected, this._kwh(produced + rest / 4 / 1000)),
+      this._stat(t.morning, this._kwh(today.forecast_kwh ?? morningKwh)),
+      this._stat(t.hitRate, pct(today.hit_rate), until),
+      this._stat(t.inBand, pct(today.in_band), until),
+    ].join("")}</div>`;
   }
 
   _reviewStats(state, t) {
@@ -673,7 +719,9 @@ class MlPvForecastCard extends HTMLElement {
     // Overview: one chart per day, each covering only the hours with sun, sharing one kW scale.
     const hourly = (a.hourly || []).map((r) => [new Date(r.time).getTime(), r.p90 / 1000]);
     const actual = (a.actual || []).map((r) => [new Date(r.time).getTime(), r.w / 1000]);
-    const max = this._maxKw([...hourly, ...actual].map(([, v]) => v));
+    // Today alone gets its own kW scale; the other views share one scale across the days.
+    const scaled = this._view === "today" ? hourly.filter(([t]) => t < localMidnight(1)) : hourly;
+    const max = this._maxKw([...scaled, ...actual].map(([, v]) => v));
     const daily = a.daily || {};
     const actualKwh = (a.actual || []).reduce((sum, r) => sum + r.w, 0) / 4 / 1000;
     const withWeather = (label, i) => {
@@ -686,10 +734,13 @@ class MlPvForecastCard extends HTMLElement {
       this._colHead(withWeather(t.dayAfter, 2), this._kwh(daily.day_after_tomorrow)),
     ];
     const specs = [];
+    const single = this._view === "carousel" || this._view === "today";
     const indices =
       this._view === "carousel"
         ? [this._dayIndex]
-        : Array.from({ length: this._config.days }, (_, i) => i);
+        : this._view === "today"
+          ? [0]
+          : Array.from({ length: this._config.days }, (_, i) => i);
     for (const i of indices) {
       const dayStart = localMidnight(i);
       const [from, to] = sunWindow(dayStart, i === 0 ? [...hourly, ...actual] : hourly);
@@ -716,7 +767,7 @@ class MlPvForecastCard extends HTMLElement {
         hours: to - from,
         max,
         yAxis: true,
-        height: this._view === "carousel" ? 230 : 160,
+        height: single ? 230 : 160,
         now: i === 0,
         series,
       });
@@ -733,7 +784,7 @@ class MlPvForecastCard extends HTMLElement {
       specs.push({
         key: `${from}-${to}`,
         weight: to - from,
-        head: this._view === "carousel" ? undefined : heads[i],
+        head: single ? undefined : heads[i],
         config,
       });
     }
@@ -955,7 +1006,7 @@ window.customCards.push({
   type: "ml-pv-forecast-card",
   name: "PV Forecast",
   description:
-    "Machine-learning PV forecast: the next days (sun hours only), per plant and a review of past days with the hit rate.",
+    "Machine-learning PV forecast: the next days (sun hours only), today with the hit rate so far, per plant and a review of past days.",
   preview: true,
   documentationURL: "https://github.com/dominikamann/ha-machine-learning-based-pv-forecast",
 });

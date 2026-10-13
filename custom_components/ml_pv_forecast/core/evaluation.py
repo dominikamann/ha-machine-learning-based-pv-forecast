@@ -194,3 +194,41 @@ def day_review(
     for row, f in zip(review["hourly"], forecast_h, strict=True):
         row.update(p10=round(float(f[0]), 1), p50=round(float(f[1]), 1), p90=round(float(f[2]), 1))
     return review
+
+
+def today_so_far(
+    morning_curve: list | None,
+    actual_times: np.ndarray,
+    actual_wh: np.ndarray,
+    day_start: int,
+    day_end: int,
+) -> dict:
+    """Today's production so far and how well the morning forecast matched the finished hours.
+
+    The hit rate and the hours in range use the same rules as ``day_review``, limited to the
+    hours whose production is complete (``until``); the hour still running is left out.
+    """
+    mask = (actual_times >= day_start) & (actual_times < day_end)
+    today = {
+        "actual_kwh": round(float(actual_wh[mask].sum()) / 1000, 2),
+        "forecast_kwh": None,
+        "hit_rate": None,
+        "in_band": None,
+        "until": None,
+    }
+    if morning_curve:
+        curve = np.asarray(morning_curve, dtype=float)
+        inside = (curve[:, 0] >= day_start) & (curve[:, 0] < day_end)
+        today["forecast_kwh"] = round(float(curve[inside, 2].sum()) / 1000, 2)
+    if not mask.any():
+        return today
+    last_end = int(actual_times[mask].max()) + 900
+    until = day_start + (last_end - day_start) // 3600 * 3600
+    if until <= day_start:
+        return today
+    today["until"] = int(until)
+    if morning_curve:
+        scored = day_review(morning_curve, actual_times, actual_wh, day_start, until)
+        if scored["in_band"] is not None:  # at least one producing hour
+            today.update(hit_rate=scored["hit_rate"], in_band=scored["in_band"])
+    return today

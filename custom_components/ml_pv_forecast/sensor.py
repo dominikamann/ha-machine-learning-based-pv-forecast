@@ -28,6 +28,7 @@ from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 
 from .const import DOMAIN, TOTAL
 from .coordinator import MlPvCoordinator
+from .core.evaluation import today_so_far
 from .history import EntityProblem, entity_kind
 
 _LOGGER = logging.getLogger(__name__)
@@ -175,7 +176,7 @@ class CurveSensor(ForecastEntity):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _unrecorded_attributes = frozenset(
-        {"hourly", "quarters", "morning", "actual", "daily", "review"}
+        {"hourly", "quarters", "morning", "actual", "daily", "review", "today"}
     )
 
     def __init__(self, coordinator, plant_id) -> None:
@@ -217,6 +218,8 @@ class CurveSensor(ForecastEntity):
             self._plant_id, (np.array([]), np.array([]))
         )
 
+        today = today_so_far(morning, actual_times, actual_wh, w.today, w.tomorrow)
+
         def kwh(start: int, end: int) -> float:
             return round(float(fc.energy(start, end)[1]) / 1000, 2)
 
@@ -235,6 +238,10 @@ class CurveSensor(ForecastEntity):
                 for t, v in zip(actual_times, actual_wh, strict=True)
                 if w.today <= t < w.tomorrow
             ],
+            "today": {
+                **today,
+                "until": _iso(today["until"]) if today["until"] is not None else None,
+            },
             "review": [
                 {
                     **day,

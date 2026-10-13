@@ -158,7 +158,8 @@ The integration ships its own card. It needs
 type: custom:ml-pv-forecast-card
 # all optional:
 # entity: sensor.pv_forecast_total_forecast_curve   # default: the total, found automatically
-# view: overview                # start view: overview | carousel | plants | review
+# views: [overview, today, carousel, plants, review] # tabs shown, in this order
+# view: overview                                     # start view (default: the first of views)
 # layout: stacked                                    # overview: stacked (one chart per day) | timeline
 # interval: 10                                       # carousel: seconds per day
 # tabs: true                                         # false: show only the start view
@@ -166,13 +167,16 @@ type: custom:ml-pv-forecast-card
 # title: PV                                          # no title unless set
 ```
 
-Four views, switched with the tabs at the top of the card:
+Five views, switched with the tabs at the top of the card:
 
 - **Overview** – one chart per day, covering only the hours with sun: hourly bars of the actual
   production (green), the live forecast (blue) with its P10–P90 range and this morning's forecast
   (violet, dashed), with the day's totals, the prevailing weather and the highest temperature
   above each chart, and small weather symbols along the top (hours with sun only). All days share one kW scale.
   `layout: timeline` shows all days in one continuous chart instead.
+- **Today** – today alone in one larger chart, with the production so far, the expected total
+  (so far plus the live forecast for the rest of the day), this morning's forecast, and the hit
+  rate and hours in range for the hours already finished.
 - **Day by day** (`carousel`) – today, tomorrow and the day after one at a time, full width,
   switching automatically every `interval` seconds; the dots jump to a day.
 - **Plants** – the next days per plant as stacked areas (their top edge is the total) and today's
@@ -189,7 +193,9 @@ Four views, switched with the tabs at the top of the card:
 | **On a phone** | |
 | ![Phone](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/overview-mobile.png) | |
 
-Want separate cards instead? Use one card per view with `view:` and `tabs: false`. The card is
+Don't need every tab? List the ones you want with `views:`, e.g. `views: [today, review]`. Want
+separate cards instead? Use one card per view, e.g. `views: [today]`; with a single view the tab
+bar is hidden. The card is
 also in the card picker as **PV Forecast**. Actual production of the last 10 days is taken from
 Home Assistant's statistics when the integration starts, so the chart is complete right after
 installing.

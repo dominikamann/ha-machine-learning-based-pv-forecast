@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 – 2026-10-13
+
+- Card: new **Today** view – today's chart with the production so far, the expected total (so far
+  plus the live forecast for the rest of the day), the morning forecast and the hit rate and hours
+  in range for the hours finished so far. Cards set to `view: today` show it again.
+- Card: `views:` chooses which tabs are shown and in which order, e.g. `views: [today, review]`.
+  With a single view the tab bar is hidden.
+- Forecast curve sensor: new `today` attribute (actual so far, morning forecast, hit rate, hours
+  in range, scored until the last finished hour).
+
 ## 0.5.4 – 2026-10-12
 
 - Card: removed the "Rest of today" view; cards set to `view: today` show the overview.

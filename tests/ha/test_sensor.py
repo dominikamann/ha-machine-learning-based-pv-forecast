@@ -227,6 +227,28 @@ async def test_hit_rate_sensors_and_review_attribute(recorder_mock, hass, open_m
     assert review[0]["hit_rate"] == pytest.approx(88.9, abs=0.1) and len(review[0]["hourly"]) == 24
 
 
+async def test_today_attribute_scores_the_finished_hours(recorder_mock, hass, open_meteo):
+    from homeassistant.util import dt as dt_util
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    start = int(dt_util.start_of_local_day().timestamp())
+    quarters = start + np.arange(96) * 900
+    sun = (np.arange(96) >= 32) & (np.arange(96) < 64)
+    coordinator.morning["total"] = [
+        [int(t), 80.0 * s, 100.0 * s, 120.0 * s] for t, s in zip(quarters, sun, strict=True)
+    ]
+    done = quarters < start + 10 * 3600 + 45 * 60
+    coordinator.actual_today["total"] = (quarters[done], np.where(sun, 90.0, 0.0)[done])
+    coordinator.async_update_listeners()
+    await hass.async_block_till_done()
+    today = hass.states.get(_entity(hass, entry, "total_curve")).attributes["today"]
+    assert today["actual_kwh"] == pytest.approx(0.99)
+    assert today["forecast_kwh"] == pytest.approx(3.2)
+    assert today["hit_rate"] == pytest.approx(88.9, abs=0.1)
+    assert today["until"] == dt_util.utc_from_timestamp(start + 10 * 3600).isoformat()
+
+
 async def test_states_and_attributes_contain_no_numpy_types(recorder_mock, hass, open_meteo):
     entry = await setup_plant(hass, open_meteo)
     await hass.services.async_call("ml_pv_forecast", "retrain", {}, blocking=True)

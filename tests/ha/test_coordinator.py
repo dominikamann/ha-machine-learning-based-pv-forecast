@@ -144,6 +144,28 @@ async def test_retrain_service_trains_named_or_all_plants(recorder_mock, hass, o
     assert train.call_count == 1
 
 
+async def test_unloading_stops_a_running_training(recorder_mock, hass, open_meteo):
+    from custom_components.ml_pv_forecast.core.gbm import Cancelled
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    before = plant.model
+    seen = []
+
+    def cancelled(*args):
+        seen.append(args[-1])  # the stop check handed to training
+        raise Cancelled
+
+    with patch("custom_components.ml_pv_forecast.coordinator.train_plant", cancelled):
+        await coordinator.async_train(plant.plant_id)
+    assert plant.model is before and plant.error is None
+    assert not ir.async_get(hass).async_get_issue(DOMAIN, f"training_{plant.plant_id}")
+    assert seen and not seen[0]()
+    await hass.config_entries.async_unload(entry.entry_id)
+    assert seen[0]()
+
+
 async def test_retrain_service_rejects_unknown_plant(recorder_mock, hass, open_meteo):
     import pytest
     from homeassistant.exceptions import ServiceValidationError

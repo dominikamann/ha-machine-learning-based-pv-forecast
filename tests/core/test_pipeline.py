@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -47,12 +49,20 @@ def test_end_to_end_accuracy_on_synthetic_plant():
     result = train_plant(w.times, y, w, LAT, LON, now, None, None, "h1")
     assert result.model.kind == "gbm" and result.model.config_hash == "h1"
     day = y[w.times >= now - 60 * DAY]
-    assert result.holdout_mae / day[day > 0].mean() < 0.15
+    assert result.holdout_score / day[day > 0].mean() < 0.15
 
     future_h = synthetic_weather(now, 48, seed=5)
     future_q = synthetic_weather(now, 192, interval=900, seed=5)
     fc = forecast_plant("a", result.model, future_h, future_q, LAT, LON, now)
     np.testing.assert_allclose(fc.energy(now, now + 86400)[1], fc.hourly[:24, 1].sum(), rtol=1e-6)
+
+    limited = replace(result.model, limit=0.5 * float(fc.hourly[:, 2].max()))
+    capped = forecast_plant(
+        "a", limited, future_h, future_q, LAT, LON, now, ratio=2.0, band=(2.0, 2.0)
+    )
+    assert capped.hourly.max() <= limited.limit
+    assert capped.quarter.max() <= limited.limit / 4
+    assert capped.quarter_raw.max() <= limited.limit / 4
 
     boosted = forecast_plant("a", result.model, future_h, future_q, LAT, LON, now, ratio=1.5)
     first = boosted.quarter[0, 1]

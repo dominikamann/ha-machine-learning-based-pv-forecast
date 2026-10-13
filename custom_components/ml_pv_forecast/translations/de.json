@@ -63,7 +63,7 @@
             "limit_w": "Einspeise- oder Wechselrichterlimit (optional)"
           },
           "data_description": {
-            "limit_w": "Wenn die Erzeugung begrenzt ist (z. B. 600-W-Balkonkraftwerk oder Einspeiselimit). Leer lassen, dann wird es automatisch erkannt."
+            "limit_w": "Wenn die Erzeugung begrenzt ist (z. B. 600-W-Balkonkraftwerk oder Einspeiselimit). Die Prognose geht dann nie darüber."
           }
         },
         "confirm_negative": {

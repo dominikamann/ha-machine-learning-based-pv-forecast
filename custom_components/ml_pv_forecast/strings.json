@@ -63,7 +63,7 @@
             "limit_w": "Export or inverter limit (optional)"
           },
           "data_description": {
-            "limit_w": "If production is capped (e.g. 600 W balcony plant or an export limit). Leave empty to detect it automatically."
+            "limit_w": "If production is capped (e.g. 600 W balcony plant or an export limit). The forecast then never goes above it."
           }
         },
         "confirm_negative": {

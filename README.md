@@ -55,7 +55,8 @@ datasheet says it should do.
   60° south) is computed. They are model inputs, identical for every installation; the model learns
   which mix fits your plant.
 - **Model**: histogram gradient boosting per plant with quantile outputs (P10/P50/P90); recent
-  data counts more than old data. Curtailment, outages and night hours are removed before training.
+  data counts more than old data. Outages and night hours are removed before training; hours
+  capped by an export or inverter limit stay in, because the capped value is what the meter shows.
   The boosting is a small numpy implementation of the algorithm behind scikit-learn's
   `HistGradientBoostingRegressor` (tested against it), because scikit-learn cannot be installed on
   Home Assistant OS. The only extra dependency is scipy.
@@ -94,8 +95,9 @@ in the log). Weather is cached, later trainings only fetch the last days.
   `full_year`. With less than 30 days a simple fallback model is used (status *learning*); with
   less than a year the forecast is weaker for seasons not seen yet and improves with the weekly
   retraining.
-- Optional per plant: the export or inverter limit in W. Without it, curtailment is detected
-  automatically.
+- Optional per plant: the export or inverter limit in W. The model learns a fixed cap from the
+  history either way; with the limit set, no forecast value (including the P90 and the short-term
+  corrections) goes above it.
 - Home Assistant 2025.3 or newer (2026.3 or newer to show the integration's own icon).
 
 ### Choosing the right sensor
@@ -119,7 +121,7 @@ Per plant and for the total:
 | Forecast curve (state: today in kWh) | kWh | `hourly` (72 h, Wh per hour), `quarters` (W), `morning` (this morning's forecast for today, W) |
 | Forecast error 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count` |
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
-| Model variant | standard / weather_plus / short_memory / weather_plus_short_memory / fallback | `scores` (error of each variant at the last training, %), `since`, `testing` |
+| Model variant | standard / weather_plus / short_memory / weather_plus_short_memory / fallback | `scores` (quantile score of each variant at the last training, % of the actual energy), `since`, `testing` |
 | Production now | W | live sum of the plant's sensors (energy meters: rise over the last 5 min) |
 | Production today | kWh | from the 15-minute actuals the forecast is checked against (a few minutes behind) |
 | Hit rate yesterday, hit rate 7 days | % | how close the morning forecast came to the actual production (100 % − deviation); `forecast_kwh`, `actual_kwh`, `in_band`, `days`, `tendency_pct` (7 days: + too optimistic, − too pessimistic) |
@@ -146,8 +148,11 @@ trained on:
 
 The active variant only changes when another one is **at least 2 % better and consistently so**
 over the holdout days (checked day by day, so one lucky week does not cause a switch). The sensor
-*Model variant* shows the active variant, every variant's error at the last training and since
-when the variant runs. *Simple model* means the plain physical model beat every variant, which
+*Model variant* shows the active variant, every variant's score at the last training and since
+when the variant runs. The score rates the whole P10–P90 band, not only P50: it is the pinball
+loss of the three quantiles (an estimate of the CRPS), in % of the actual energy, and equals the
+plain error of P50 when the band has no width. A variant with an equally good P50 but a band that
+holds the actual values more tightly therefore wins. *Simple model* means the plain physical model beat every variant, which
 happens in the first weeks.
 
 Training four variants takes about three times as long as one. On a Raspberry Pi that is a few

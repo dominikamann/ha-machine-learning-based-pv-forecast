@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Capped plants are no longer forecast too low.** Hours at an export or inverter limit used to
+  be dropped before training, which left only the weaker hours at high irradiance: in a test with
+  a plant capped at 60 % of its peak the forecast was 5 % too low in the capped hours and 2 % over
+  the year. These hours now stay in; the configured limit caps every forecast value instead
+  (P10–P90, after the correction, the short-term adjustment and the band). The automatic plateau
+  detection is gone, the model learns a fixed cap from the data.
+- Fixed: a quantile model whose quantile sat exactly on many equal values (hours at a cap) never
+  learned anything and stayed at that value – the P90 of a capped plant was the cap all day long.
+  Such a model now starts from the mean. Other plants are unaffected (bit-identical models).
+- **Variants and promotion are judged on the whole P10–P90 band** (quantile score, an estimate of
+  the CRPS) instead of the P50 error alone. The variant scores keep their unit: % of the actual
+  energy; they equal the old values when the band has no width.
+- Training stops when Home Assistant shuts down or the integration reloads, instead of running
+  on for minutes in the background. Standard variants skip the weather inputs they do not use
+  (same models, a little faster).
+- Every plant retrains once after the update.
+
 ## 0.9.0 – 2026-10-13
 
 - **Model variants**: every week four variants are trained and scored on the same last 60 days –

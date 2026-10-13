@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import reduce
 
@@ -122,6 +123,7 @@ def train_plant(
     limit_w: float | None,
     config_hash: str,
     variants: tuple[Variant, ...] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> TrainResult:
     """Train on every hour once per forecast lead (same-day, day ahead, ...)."""
     weathers = weather if isinstance(weather, list) else [weather]
@@ -129,7 +131,7 @@ def train_plant(
     times = np.concatenate([p[0] for p in parts])
     X = np.concatenate([p[1] for p in parts])
     y = np.concatenate([p[2] for p in parts])
-    result = train(times, X, y, now, active, limit_w, variants)
+    result = train(times, X, y, now, active, limit_w, variants, should_stop)
     result.model.config_hash = config_hash
     return result
 
@@ -177,6 +179,12 @@ def forecast_plant(
     )
     if band != NEUTRAL:
         hourly, quarter = widen(hourly, band), widen(quarter, band)
+    limit = vars(model).get("limit")
+    if limit:  # correction, nowcast and band can push values past what the plant may deliver
+        hourly = np.minimum(hourly, limit)
+        quarter = np.minimum(quarter, limit * QUARTER / HOUR)
+        quarter_raw = np.minimum(quarter_raw, limit * QUARTER / HOUR)
+        quarter_model = np.minimum(quarter_model, limit * QUARTER / HOUR)
     return PlantForecast(
         plant_id,
         now,

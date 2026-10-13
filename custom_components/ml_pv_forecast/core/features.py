@@ -8,7 +8,7 @@ from .solar import VIRTUAL_PLANES, clear_sky_ghi, plane_irradiance, sun_position
 from .weather import ENSEMBLE_MODELS, WeatherData
 
 # Bump when the feature set changes: stored models with another version are retrained.
-FEATURE_VERSION = 3
+FEATURE_VERSION = 4
 
 PLANE_FEATURES = [f"plane_{int(tilt)}_{int(azimuth)}" for tilt, azimuth in VIRTUAL_PLANES]
 FEATURE_NAMES = [

@@ -33,18 +33,20 @@ _EXTRA_COLUMNS = [col(name) for name in EXTRA_WEATHER]
 
 
 def inputs(variant: str, X: np.ndarray) -> np.ndarray:
-    """The feature matrix as this variant sees it (extra weather hidden unless it uses it)."""
+    """The feature matrix as this variant sees it (extra weather left out unless it uses it).
+
+    Dropping the columns gives the same trees as hiding them, without building histograms for
+    inputs that can never be split on.
+    """
     if BY_KEY.get(variant, STANDARD).extra_weather:
         return X
-    X = X.copy()
-    X[:, _EXTRA_COLUMNS] = np.nan
-    return X
+    return np.delete(X, _EXTRA_COLUMNS, axis=1)
 
 
 def choose(day_errors: dict[str, np.ndarray], active: str, seed: int = 0) -> str:
     """The variant to run: the active one unless another is clearly and consistently better.
 
-    ``day_errors`` holds each variant's absolute error per holdout day (same days for all).
+    ``day_errors`` holds each variant's error per holdout day (same days for all).
     """
     if active not in day_errors:
         active = STANDARD.key if STANDARD.key in day_errors else next(iter(day_errors))

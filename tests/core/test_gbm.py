@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from sklearn.ensemble import HistGradientBoostingRegressor
 
-from custom_components.ml_pv_forecast.core.gbm import GradientBoosting
+from custom_components.ml_pv_forecast.core.gbm import Cancelled, GradientBoosting
 
 
 def make_data(n=6000, seed=0):
@@ -56,6 +56,37 @@ def test_zero_weight_rows_are_ignored():
     a = GradientBoosting(loss="quantile", quantile=0.5).fit(X, corrupt, sample_weight=w)
     b = GradientBoosting(loss="quantile", quantile=0.5).fit(X[1500:], y[1500:])
     np.testing.assert_allclose(a.predict(X[:200]), b.predict(X[:200]), atol=0.05)
+
+
+def test_fit_stops_when_asked():
+    X, y = make_data(500)
+    calls = []
+
+    def stop() -> bool:
+        calls.append(1)
+        return len(calls) > 3
+
+    with pytest.raises(Cancelled):
+        GradientBoosting(loss="quantile", quantile=0.5).fit(X, y, should_stop=stop)
+    assert len(calls) == 4
+
+
+def test_quantiles_learn_when_many_targets_sit_on_the_maximum():
+    # Hours capped at an export limit: a fifth of the targets equal the maximum, so the 90 %
+    # quantile of the data is that maximum. The model must still follow the signal below it.
+    X, y = make_data()
+    Xt, yt = make_data(seed=2)
+    cap = np.quantile(y, 0.8)
+    capped, capped_t = np.minimum(y, cap), np.minimum(yt, cap)
+    model = GradientBoosting(loss="quantile", quantile=0.9).fit(X, capped)
+    ref = HistGradientBoostingRegressor(
+        loss="quantile", quantile=0.9, learning_rate=0.05, max_iter=300, random_state=0
+    ).fit(X, capped)
+    p = model.predict(Xt)
+    assert np.ptp(p) > 0.8 * np.ptp(ref.predict(Xt))
+    # Capped rows are approached from below, so allow a hair of tolerance at the cap.
+    ours = np.mean(capped_t <= p + 1e-3)
+    assert ours == pytest.approx(np.mean(capped_t <= ref.predict(Xt) + 1e-3), abs=0.02)
 
 
 def test_nan_features_and_pickle_roundtrip():

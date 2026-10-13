@@ -23,7 +23,7 @@ def test_capacity_is_p99_of_recent_year():
 def test_night_is_excluded_and_clean_day_rows_kept():
     times, X, y = setup()
     cap = effective_capacity(times, y, int(times[-1]))
-    ok = usable_mask(times, y, X, cap)
+    ok = usable_mask(y, X, cap)
     assert not ok[X[:, col("sun_elevation")] < 0].any()
     day = X[:, col("sun_elevation")] >= 2
     assert ok[day].mean() > 0.95
@@ -35,24 +35,18 @@ def test_outage_on_sunny_hours_is_excluded():
     sunny = (np.nan_to_num(X[:, col("clearsky_index")]) > 0.7) & (X[:, col("sun_elevation")] > 10)
     broken = y.copy()
     broken[sunny] = 0.0
-    ok = usable_mask(times, broken, X, cap)
+    ok = usable_mask(broken, X, cap)
     assert not ok[sunny].any()
 
 
-def test_clipping_is_detected_without_limit():
+def test_hours_capped_by_a_limit_are_kept():
+    # The capped value is what the meter shows; dropping these hours biases the forecast low.
     times, X, y = setup(clip_w=3000.0)
     cap = effective_capacity(times, y, int(times[-1]))
-    ok = usable_mask(times, y, X, cap)
+    ok = usable_mask(y, X, cap)
     clipped = y >= 2999.0
     assert clipped.sum() > 50
-    assert (~ok[clipped]).mean() > 0.6
-
-
-def test_configured_limit_excludes_rows_near_limit():
-    times, X, y = setup(clip_w=3000.0)
-    cap = effective_capacity(times, y, int(times[-1]))
-    ok = usable_mask(times, y, X, cap, limit_wh=3000.0)
-    assert not ok[y >= 2910.0].any()
+    assert ok[clipped].all()
 
 
 def test_no_production_gives_zero_capacity():
@@ -73,5 +67,5 @@ def test_snow_covered_sunny_hours_are_kept_for_training():
     sunny = (np.nan_to_num(X[:, col("clearsky_index")]) > 0.7) & (X[:, col("sun_elevation")] > 10)
     covered = y.copy()
     covered[sunny] = 0.0  # panels under snow
-    ok = usable_mask(w.times, covered, X, cap)
+    ok = usable_mask(covered, X, cap)
     assert ok[sunny].all()

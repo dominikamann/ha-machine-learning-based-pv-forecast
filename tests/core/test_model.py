@@ -8,6 +8,7 @@ from custom_components.ml_pv_forecast.core.model import (
     PlantModel,
     fit_fallback,
     load_model,
+    quantile_score,
     sample_weights,
     save_model,
     train,
@@ -26,6 +27,49 @@ def test_sample_weights_halve_after_a_year_and_downweight_reanalysis():
     assert w[1] == pytest.approx(0.3)
     short = sample_weights(np.array([0]), 90 * 86400, np.array([0.0]), half_life_days=90)
     assert short[0] == pytest.approx(0.5)
+
+
+def test_quantile_score_is_the_absolute_error_for_a_zero_wide_band():
+    actual = np.array([100.0, 100.0])
+    sharp = np.array([[80.0, 80.0, 80.0], [130.0, 130.0, 130.0]])
+    np.testing.assert_allclose(quantile_score(sharp, actual), [20.0, 30.0])
+    # A band that holds the actual value scores better than the same P50 without a band ...
+    banded = np.array([[60.0, 80.0, 110.0]])
+    assert quantile_score(banded, actual[:1])[0] < 20.0
+    # ... and a needlessly wide band is penalised.
+    wide = np.array([[0.0, 80.0, 400.0]])
+    assert quantile_score(wide, actual[:1])[0] > quantile_score(banded, actual[:1])[0]
+
+
+def test_limit_caps_every_quantile():
+    times, X, y = data(20)
+    m = fit_fallback(X, y, float(y.max()), int(times[-1]), limit=1000.0)
+    p = m.predict(X)
+    assert p.max() == 1000.0 and (p[:, 0] <= p[:, 1]).all() and (p[:, 1] <= p[:, 2]).all()
+
+
+def test_capped_plant_is_forecast_without_bias():
+    # A south roof whose production is capped at 60 % of its peak (balcony plant, export limit),
+    # forecast for the summer after a year of history.
+    w = synthetic_weather(START_2024 + 180 * 86400, 400 * 24)
+    X = build_features(w, LAT, LON)
+    free = synthetic_production(w, planes=((30.0, 180.0, 1.0),))
+    limit = 0.6 * float(free.max())
+    y = np.minimum(free, limit)
+    now = int(w.times[-1]) + 3600
+    train_part = w.times < now - 60 * 86400
+    result = train(w.times[train_part], X[train_part], y[train_part], now, limit_w=limit)
+    assert result.model.kind == "gbm"
+    test = ~train_part & (y > 0)
+    p = result.model.predict(X[test])
+    assert p.max() <= limit
+    assert abs(p[:, 1].sum() / y[test].sum() - 1) < 0.02
+    capped = free[test] >= limit
+    assert capped.sum() > 50
+    assert np.mean(p[capped, 1] / y[test][capped]) > 0.98
+    # the band holds the actual value (1 Wh of slack at the limit, which P90 approaches from
+    # below) and moves with the weather instead of sticking to the limit
+    assert np.mean(y[test] > p[:, 2] + 1.0) < 0.2 and p[~capped, 2].min() < 0.5 * limit
 
 
 def test_fallback_tracks_production():
@@ -47,7 +91,7 @@ def test_long_history_trains_gbm_that_beats_baseline_with_shading():
     times, X, y = data(200, shade=14.0)
     result = train(times, X, y, int(times[-1]) + 3600)
     assert result.model.kind == "gbm" and result.promoted and result.status == "ready"
-    assert result.holdout_mae < 0.8 * result.baseline_mae
+    assert result.holdout_score < 0.8 * result.baseline_score
 
 
 def test_worse_candidate_keeps_active_model(monkeypatch):
@@ -55,7 +99,7 @@ def test_worse_candidate_keeps_active_model(monkeypatch):
     now = int(times[-1]) + 3600
     good = train(times, X, y, now - 10 * 86400).model
 
-    def zero_gbm(X, y, weights, capacity, now, variant="standard"):
+    def zero_gbm(X, y, weights, capacity, now, variant="standard", limit=None, should_stop=None):
         m = PlantModel("gbm", capacity, now, coef=None)
         m.predict = lambda X: np.zeros((len(X), 3))  # type: ignore[method-assign]
         return m

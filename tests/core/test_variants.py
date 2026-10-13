@@ -1,6 +1,6 @@
 import numpy as np
 
-from custom_components.ml_pv_forecast.core.features import col
+from custom_components.ml_pv_forecast.core.features import FEATURE_NAMES, col
 from custom_components.ml_pv_forecast.core.variants import (
     EXTRA_WEATHER,
     STANDARD,
@@ -10,20 +10,19 @@ from custom_components.ml_pv_forecast.core.variants import (
 )
 
 
-def test_standard_hides_the_extra_weather_inputs_and_weather_plus_keeps_them():
-    X = np.ones((3, max(col(n) for n in EXTRA_WEATHER) + 1))
-    plain = inputs("standard", X)
-    assert np.isnan(plain[:, [col(n) for n in EXTRA_WEATHER]]).all()
-    assert np.isfinite(np.delete(plain, [col(n) for n in EXTRA_WEATHER], axis=1)).all()
-    assert np.isfinite(inputs("weather_plus", X)).all()
-    assert np.isfinite(X).all()  # the input is not changed
+def test_standard_leaves_out_the_extra_weather_inputs_and_weather_plus_keeps_them():
+    X = np.arange(3 * len(FEATURE_NAMES), dtype=float).reshape(3, -1)
+    extra = [col(n) for n in EXTRA_WEATHER]
+    np.testing.assert_array_equal(inputs("standard", X), np.delete(X, extra, axis=1))
+    np.testing.assert_array_equal(inputs("weather_plus", X), X)
+    assert X.shape == (3, len(FEATURE_NAMES))  # the input is not changed
     assert [v.key for v in VARIANTS] == [
         "standard",
         "weather_plus",
         "short_memory",
         "weather_plus_short_memory",
     ]
-    assert np.isfinite(inputs("weather_plus_short_memory", X)).all()
+    np.testing.assert_array_equal(inputs("weather_plus_short_memory", X), X)
     assert STANDARD.key == "standard"
 
 

@@ -8,7 +8,13 @@ residuals (as scikit-learn's HistGradientBoostingRegressor does).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
+
+
+class Cancelled(Exception):
+    """Fitting was stopped from outside (Home Assistant shuts down or reloads)."""
 
 
 def _weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float) -> float:
@@ -121,7 +127,11 @@ class GradientBoosting:
         self.binner = _Binner(max_bins)
 
     def fit(
-        self, X: np.ndarray, y: np.ndarray, sample_weight: np.ndarray | None = None
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> GradientBoosting:
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float)
@@ -134,11 +144,18 @@ class GradientBoosting:
             if self.loss == "quantile"
             else float(np.average(y, weights=w))
         )
+        if self.loss == "quantile" and len(y) and not y.min() < self.baseline < y.max():
+            # The quantile sits on a point mass at the edge of the data (e.g. many hours capped at
+            # an export limit): every residual has the same sign, the gradient is the same for all
+            # rows, no split gains anything and the model would never move. Start from the mean.
+            self.baseline = float(np.average(y, weights=w))
         pred = np.full(len(y), self.baseline)
         offsets = np.arange(X.shape[1]) * (self.max_bins + 1)
         codes = (Xb.astype(np.int64) + offsets).ravel()
         self.trees = []
         for _ in range(self.max_iter):
+            if should_stop is not None and should_stop():
+                raise Cancelled
             residual = y - pred
             if self.loss == "quantile":
                 gradient = w * np.where(residual > 0, self.quantile, self.quantile - 1)

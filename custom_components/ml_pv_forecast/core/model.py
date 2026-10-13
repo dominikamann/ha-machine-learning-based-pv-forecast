@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pickle
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -47,7 +48,8 @@ class PlantModel:
     history_end: int = 0
     variant: str = STANDARD.key  # which model variant this is (see variants.py)
     variant_since: int = 0  # when this plant switched to the variant
-    variant_scores: dict[str, float] = field(default_factory=dict)  # holdout error per variant
+    variant_scores: dict[str, float] = field(default_factory=dict)  # holdout score per variant
+    limit: float | None = None  # export or inverter limit in W (= Wh per hour), caps the forecast
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """P10, P50, P90 per row."""
@@ -61,6 +63,9 @@ class PlantModel:
                 * self.capacity
             )
         out = np.clip(out, 0.0, 1.1 * self.capacity)
+        limit = vars(self).get("limit")
+        if limit:
+            out = np.minimum(out, limit)
         out.sort(axis=1)
         out[X[:, col("sun_elevation")] < 0] = 0.0
         return out
@@ -71,10 +76,10 @@ class TrainResult:
     model: PlantModel
     promoted: bool
     rows: int
-    holdout_mae: float | None
-    baseline_mae: float | None
+    holdout_score: float | None  # quantile score (see quantile_score), Wh per hour
+    baseline_score: float | None
     status: str  # "learning" or "ready"
-    # error of each variant on the holdout days, in % of the actual energy
+    # quantile score of each variant on the holdout days, in % of the actual energy
     variant_scores: dict[str, float] = field(default_factory=dict)
 
 
@@ -88,7 +93,21 @@ def sample_weights(
     return 0.5 ** (age_days / half_life_days) * np.where(is_reanalysis > 0, REANALYSIS_WEIGHT, 1.0)
 
 
-def fit_fallback(X: np.ndarray, y: np.ndarray, capacity: float, now: int) -> PlantModel:
+def quantile_score(predicted: np.ndarray, actual: np.ndarray) -> np.ndarray:
+    """Per row: pinball loss of P10, P50 and P90, summed and scaled by 2/3.
+
+    This is the usual estimate of the CRPS from three quantiles. It rewards a sharp band that
+    still holds the actual value, and equals the absolute error of P50 when the band is zero
+    wide, so it reads like a MAE in Wh.
+    """
+    q = np.asarray(QUANTILES)
+    miss = actual[:, None] - predicted
+    return 2 / len(q) * np.maximum(q * miss, (q - 1) * miss).sum(axis=1)
+
+
+def fit_fallback(
+    X: np.ndarray, y: np.ndarray, capacity: float, now: int, limit: float | None = None
+) -> PlantModel:
     """Non-negative least squares of production on the virtual-plane irradiances."""
     A = X[:, PLANE_COLUMNS]
     coef, _ = nnls(A, y)
@@ -98,7 +117,7 @@ def fit_fallback(X: np.ndarray, y: np.ndarray, capacity: float, now: int) -> Pla
     if big.sum() >= 10:
         ratio = y[big] / p50[big]
         spread = (float(np.quantile(ratio, 0.1)), float(np.quantile(ratio, 0.9)))
-    return PlantModel("fallback", capacity, now, coef=coef, spread=spread)
+    return PlantModel("fallback", capacity, now, coef=coef, spread=spread, limit=limit)
 
 
 def fit_gbm(
@@ -108,19 +127,21 @@ def fit_gbm(
     capacity: float,
     now: int,
     variant: str = STANDARD.key,
+    limit: float | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> PlantModel:
     target = y / capacity
     seen = inputs(variant, X)
     estimators = {}
     for q in QUANTILES:
         estimator = GradientBoosting(loss="quantile", quantile=q)
-        estimator.fit(seen, target, sample_weight=weights)
+        estimator.fit(seen, target, sample_weight=weights, should_stop=should_stop)
         estimators[q] = estimator
-    return PlantModel("gbm", capacity, now, estimators=estimators, variant=variant)
+    return PlantModel("gbm", capacity, now, estimators=estimators, variant=variant, limit=limit)
 
 
-def _mae(model: PlantModel, X: np.ndarray, y: np.ndarray) -> float:
-    return float(np.mean(np.abs(model.predict(X)[:, 1] - y)))
+def _score(model: PlantModel, X: np.ndarray, y: np.ndarray) -> float:
+    return float(np.mean(quantile_score(model.predict(X), y)))
 
 
 def train(
@@ -131,10 +152,11 @@ def train(
     active: PlantModel | None = None,
     limit_w: float | None = None,
     variants: tuple[Variant, ...] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> TrainResult:
     """Train and record which history a newly fitted model has seen (all variants by default)."""
     variants = VARIANTS if variants is None else variants
-    result = _train(times, X, y, now, active, limit_w, variants)
+    result = _train(times, X, y, now, active, limit_w, variants, should_stop)
     if result.model is not active:
         previous = vars(active) if active is not None else {}
         same = previous.get("variant", STANDARD.key) == result.model.variant
@@ -155,16 +177,19 @@ def _train(
     active: PlantModel | None = None,
     limit_w: float | None = None,
     variants: tuple[Variant, ...] = (STANDARD,),
+    should_stop: Callable[[], bool] | None = None,
 ) -> TrainResult:
     """Train a candidate and decide whether it replaces the active model (spec §5.7, §5.8).
 
     Every variant is fitted on the same rows and scored on the same holdout days; the active
     variant is kept unless another is clearly and consistently better (``variants.choose``).
+    All comparisons use ``quantile_score``, so the P10–P90 band counts as well as P50.
+    Hours at the export limit stay in the training data: they are what the meter will show.
     """
     capacity = effective_capacity(times, y, now)
     if capacity <= 0:
         raise NotEnoughData("no production recorded")
-    mask = usable_mask(times, y, X, capacity, limit_w)  # hourly rows: W limit == Wh per hour
+    mask = usable_mask(y, X, capacity)
     t, Xu, yu = times[mask], X[mask], y[mask]
     if len(t) < MIN_FALLBACK_ROWS:
         raise NotEnoughData(f"only {len(t)} usable hours")
@@ -175,7 +200,7 @@ def _train(
         if active_gbm is not None:
             return TrainResult(active_gbm, False, len(t), None, None, "ready")
         return TrainResult(
-            fit_fallback(Xu, yu, capacity, now), True, len(t), None, None, "learning"
+            fit_fallback(Xu, yu, capacity, now, limit_w), True, len(t), None, None, "learning"
         )
 
     holdout = t >= now - HOLDOUT_DAYS * DAY
@@ -187,8 +212,10 @@ def _train(
     candidates, day_errors, scores = {}, {}, {}
     for v in variants:
         w = sample_weights(t, now, reanalysis, v.half_life_days)
-        model = fit_gbm(Xu[fit_part], yu[fit_part], w[fit_part], capacity, now, v.key)
-        error = np.abs(model.predict(Xu[holdout])[:, 1] - yu[holdout])
+        model = fit_gbm(
+            Xu[fit_part], yu[fit_part], w[fit_part], capacity, now, v.key, limit_w, should_stop
+        )
+        error = quantile_score(model.predict(Xu[holdout]), yu[holdout])
         candidates[v.key] = model
         day_errors[v.key] = np.bincount(day_index, error)
         scores[v.key] = round(float(error.sum() / max(yu[holdout].sum(), 1e-9) * 100), 2)
@@ -196,11 +223,11 @@ def _train(
     variant = BY_KEY[choose(day_errors, active_variant)]
     weights = sample_weights(t, now, reanalysis, variant.half_life_days)
     candidate = candidates[variant.key]
-    baseline = fit_fallback(Xu[fit_part], yu[fit_part], capacity, now)
-    candidate_mae = _mae(candidate, Xu[holdout], yu[holdout])
-    baseline_mae = _mae(baseline, Xu[holdout], yu[holdout])
+    baseline = fit_fallback(Xu[fit_part], yu[fit_part], capacity, now, limit_w)
+    candidate_score = _score(candidate, Xu[holdout], yu[holdout])
+    baseline_score = _score(baseline, Xu[holdout], yu[holdout])
 
-    promoted = candidate_mae < baseline_mae
+    promoted = candidate_score < baseline_score
     if promoted and active_gbm is not None:
         # Compare at the same data cutoff: a rival trained on exactly the data the active model
         # had must not do worse on the hours neither has seen. This catches regressions (bad data,
@@ -208,18 +235,20 @@ def _train(
         seen = t <= active_gbm.trained_at
         unseen = ~seen
         if unseen.sum() >= MIN_UNSEEN_ROWS and seen.sum() >= MIN_UNSEEN_ROWS:
-            rival = fit_gbm(Xu[seen], yu[seen], weights[seen], capacity, now, variant.key)
-            promoted = _mae(rival, Xu[unseen], yu[unseen]) <= ACTIVE_TOLERANCE * _mae(
+            rival = fit_gbm(
+                Xu[seen], yu[seen], weights[seen], capacity, now, variant.key, limit_w, should_stop
+            )
+            promoted = _score(rival, Xu[unseen], yu[unseen]) <= ACTIVE_TOLERANCE * _score(
                 active_gbm, Xu[unseen], yu[unseen]
             )
 
     if promoted:
-        final = fit_gbm(Xu, yu, weights, capacity, now, variant.key)
+        final = fit_gbm(Xu, yu, weights, capacity, now, variant.key, limit_w, should_stop)
     elif active_gbm is not None:
         final = active_gbm
     else:
-        final, promoted = fit_fallback(Xu, yu, capacity, now), True
-    return TrainResult(final, promoted, len(t), candidate_mae, baseline_mae, "ready", scores)
+        final, promoted = fit_fallback(Xu, yu, capacity, now, limit_w), True
+    return TrainResult(final, promoted, len(t), candidate_score, baseline_score, "ready", scores)
 
 
 def is_current(model: PlantModel) -> bool:

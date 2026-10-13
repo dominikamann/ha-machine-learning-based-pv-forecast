@@ -371,7 +371,7 @@ class VariantSensor(ForecastEntity):
         stored = vars(plant.model) if plant.model is not None else {}
         since = stored.get("variant_since") or stored.get("trained_at")
         return {
-            # holdout error of every variant at the last training, % of the actual energy
+            # holdout quantile score of every variant at the last training, % of the actual energy
             "scores": plant.variant_scores or stored.get("variant_scores", {}),
             "since": _iso(since) if since else None,
             "testing": len(self.coordinator.variants) > 1,

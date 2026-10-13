@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -32,6 +33,7 @@ from .core.evaluation import (
     day_review,
     tau_from_rows,
 )
+from .core.gbm import Cancelled
 from .core.model import NotEnoughData, PlantModel, is_current, load_model, save_model
 from .core.nowcast import (
     DEFAULT_DAY_TAU,
@@ -138,6 +140,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         self._morning_day: str | None = None
         self._freeze_morning = False
         self._unsubscribe: list = []
+        # Training runs for minutes in an executor thread; unloading sets this to stop it.
+        self._stop_training = threading.Event()
 
     # ---- lifecycle -------------------------------------------------------------------------
 
@@ -261,6 +265,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         self._background(self._async_weekly(now), "weekly")
 
     async def async_unload(self) -> None:
+        self._stop_training.set()
         for unsubscribe in self._unsubscribe:
             unsubscribe()
         if self.archive is not None:
@@ -579,7 +584,10 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                     plant.limit_w,
                     plant.config_hash,
                     self.variants,
+                    self._stop_training.is_set,
                 )
+            except Cancelled:
+                return
             except NotEnoughData as err:
                 plant.status, plant.error = "learning", str(err)
                 return

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.1 – 2026-10-13
+
+- Fixed: when Open-Meteo answered with an error page instead of data (its rate limit or a server
+  error behind a proxy), training stopped at once with "unexpected character". Such answers are
+  now waited out and retried like the rate limit, and the error names the HTTP status. Training
+  that still fails is retried every hour as before.
+
 ## 0.9.0 – 2026-10-13
 
 - **Capped plants are no longer forecast too low.** Hours at an export or inverter limit used to

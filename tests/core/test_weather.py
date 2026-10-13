@@ -37,6 +37,8 @@ class FakeResponse:
         self.status, self._payload = status, payload
 
     async def json(self, content_type=None):
+        if isinstance(self._payload, str):  # a body that is no JSON, e.g. an HTML error page
+            raise ValueError("unexpected character: line 1 column 1 (char 0)")
         return self._payload
 
     async def __aenter__(self):
@@ -189,6 +191,30 @@ async def test_rate_limit_waits_and_retries(monkeypatch):
 
     hourly, _ = await OpenMeteoClient(FakeSession(handler), 50.0, 10.0).forecast()
     assert len(hourly) == 1 and waits == [61]
+
+
+async def test_server_errors_without_json_are_retried(monkeypatch):
+    from custom_components.ml_pv_forecast.core import weather as weather_module
+
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
+    answers = iter([(503, "<html>Service Unavailable</html>"), (429, "Too Many Requests")])
+
+    def handler(url, params):
+        return next(answers, (200, {"hourly": block([3600]), "minutely_15": block([900])}))
+
+    hourly, _ = await OpenMeteoClient(FakeSession(handler), 50.0, 10.0).forecast()
+    assert len(hourly) == 1 and waits == [61, 61]
+
+
+async def test_a_reply_without_json_names_the_status():
+    session = FakeSession(lambda url, params: (404, "<html>Not Found</html>"))
+    with pytest.raises(OpenMeteoError, match="HTTP 404 no JSON in reply"):
+        await OpenMeteoClient(session, 50.0, 10.0).forecast()
 
 
 async def test_rate_limit_gives_up_after_retries(monkeypatch):

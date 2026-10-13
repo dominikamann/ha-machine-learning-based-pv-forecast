@@ -64,8 +64,8 @@ class OpenMeteoError(Exception):
     """Open-Meteo could not deliver data."""
 
 
-class _RateLimited(Exception):
-    """HTTP 429 from Open-Meteo; retried after a pause."""
+class _Retry(Exception):
+    """Open-Meteo's limit was hit (HTTP 429) or its server failed (5xx); retried after a pause."""
 
 
 @dataclass(frozen=True)
@@ -220,7 +220,7 @@ class OpenMeteoClient:
         for attempt in range(RATE_LIMIT_RETRIES + 1):
             try:
                 return await self._get_once(url, params)
-            except _RateLimited as err:
+            except _Retry as err:
                 if attempt == RATE_LIMIT_RETRIES:
                     raise OpenMeteoError(str(err)) from err
                 await asyncio.sleep(RATE_LIMIT_WAIT)
@@ -231,15 +231,20 @@ class OpenMeteoClient:
             async with self._session.get(
                 url, params=params, timeout=aiohttp.ClientTimeout(total=60)
             ) as resp:
-                payload = await resp.json(content_type=None)
-                if resp.status != 200 or payload.get("error"):
-                    reason = payload.get("reason", "") if isinstance(payload, dict) else ""
-                    message = f"{url}: HTTP {resp.status} {reason}".strip()
-                    if resp.status == 429:
-                        raise _RateLimited(message)
-                    raise OpenMeteoError(message)
-                return payload
-        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+                try:
+                    payload = await resp.json(content_type=None)
+                except ValueError:
+                    payload = None  # e.g. an HTML error page from a proxy in front of the API
+                if resp.status == 200 and isinstance(payload, dict) and not payload.get("error"):
+                    return payload
+                reason = (
+                    payload.get("reason", "") if isinstance(payload, dict) else "no JSON in reply"
+                )
+                message = f"{url}: HTTP {resp.status} {reason}".strip()
+                if resp.status == 429 or resp.status >= 500:
+                    raise _Retry(message)
+                raise OpenMeteoError(message)
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise OpenMeteoError(f"{url}: {err}") from err
 
     async def forecast(self) -> tuple[WeatherData, WeatherData]:

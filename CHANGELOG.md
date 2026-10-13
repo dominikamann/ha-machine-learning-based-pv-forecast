@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2 – 2026-10-13
+
+- Card, Today and Review: below the hit rate, which way the morning forecast was off – ▲ too
+  pessimistic (more came) or ▼ too optimistic (less came), "on target" within ±3 %.
+- Hit rate 7 days: new `tendency_pct` attribute, the signed deviation of the morning forecasts over
+  the week, weighted by energy (+ too optimistic, − too pessimistic).
+- Review days and the `today` attribute carry the signed `deviation_pct`.
+
 ## 0.6.1 – 2026-10-13
 
 - The accuracy sensors are now called **Forecast error** (German: *Prognosefehler*): they show

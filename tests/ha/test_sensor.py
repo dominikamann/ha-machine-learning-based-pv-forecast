@@ -223,6 +223,7 @@ async def test_hit_rate_sensors_and_review_attribute(recorder_mock, hass, open_m
     assert state.attributes["forecast_kwh"] == pytest.approx(3.2)
     week = hass.states.get(_entity(hass, entry, "total_hit_rate_week"))
     assert float(week.state) == pytest.approx(88.9, abs=0.1)
+    assert week.attributes["tendency_pct"] == pytest.approx(11.1, abs=0.1)  # too optimistic
     review = hass.states.get(_entity(hass, entry, "total_curve")).attributes["review"]
     assert review[0]["hit_rate"] == pytest.approx(88.9, abs=0.1) and len(review[0]["hourly"]) == 24
 
@@ -246,6 +247,7 @@ async def test_today_attribute_scores_the_finished_hours(recorder_mock, hass, op
     assert today["actual_kwh"] == pytest.approx(0.99)
     assert today["forecast_kwh"] == pytest.approx(3.2)
     assert today["hit_rate"] == pytest.approx(88.9, abs=0.1)
+    assert today["deviation_pct"] == pytest.approx(11.1, abs=0.1)
     assert today["until"] == dt_util.utc_from_timestamp(start + 10 * 3600).isoformat()
 
 

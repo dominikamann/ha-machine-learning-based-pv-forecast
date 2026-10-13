@@ -154,6 +154,7 @@ def day_review(
 
     ``morning_curve`` holds quarter rows ``[start, p10, p50, p90]`` in Wh, actuals are quarter
     Wh. Hit rate: 100 % minus the deviation of the daily forecast from the actual energy.
+    Deviation: the same with its sign, positive when the forecast was too optimistic.
     In band: share of producing hours whose actual energy lay between P10 and P90.
     """
     hours = np.arange(day_start, day_end, 3600)
@@ -166,6 +167,7 @@ def day_review(
         "actual_kwh": round(float(actual_h.sum()) / 1000, 2),
         "forecast_kwh": None,
         "hit_rate": None,
+        "deviation_pct": None,
         "in_band": None,
         "complete": complete,
         "hourly": [
@@ -189,6 +191,7 @@ def day_review(
     review.update(
         forecast_kwh=round(forecast / 1000, 2),
         hit_rate=round(hit, 1),
+        deviation_pct=round((forecast - actual) / actual * 100, 1) if actual > 0 else None,
         in_band=round(float(within[producing].mean()) * 100, 1) if producing.any() else None,
     )
     for row, f in zip(review["hourly"], forecast_h, strict=True):
@@ -213,6 +216,7 @@ def today_so_far(
         "actual_kwh": round(float(actual_wh[mask].sum()) / 1000, 2),
         "forecast_kwh": None,
         "hit_rate": None,
+        "deviation_pct": None,
         "in_band": None,
         "until": None,
     }
@@ -230,5 +234,22 @@ def today_so_far(
     if morning_curve:
         scored = day_review(morning_curve, actual_times, actual_wh, day_start, until)
         if scored["in_band"] is not None:  # at least one producing hour
-            today.update(hit_rate=scored["hit_rate"], in_band=scored["in_band"])
+            today.update(
+                hit_rate=scored["hit_rate"],
+                deviation_pct=scored["deviation_pct"],
+                in_band=scored["in_band"],
+            )
     return today
+
+
+def tendency(days: list[dict]) -> float | None:
+    """Signed deviation of the morning forecasts over several days, in % of the actual energy.
+
+    Positive: the forecasts were too optimistic, negative: too pessimistic. Days are weighted by
+    their energy, so a dull winter day does not outweigh a sunny one.
+    """
+    scored = [d for d in days if d.get("forecast_kwh") is not None and d.get("actual_kwh")]
+    actual = sum(d["actual_kwh"] for d in scored)
+    if not actual:
+        return None
+    return round((sum(d["forecast_kwh"] for d in scored) - actual) / actual * 100, 1)

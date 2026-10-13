@@ -114,7 +114,7 @@ Per plant and for the total:
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
 | Production now | W | live sum of the plant's sensors (energy meters: rise over the last 5 min) |
 | Production today | kWh | from the 15-minute actuals the forecast is checked against (a few minutes behind) |
-| Hit rate yesterday, hit rate 7 days | % | how close the morning forecast came to the actual production (100 % − deviation); `forecast_kwh`, `actual_kwh`, `in_band`, `days` |
+| Hit rate yesterday, hit rate 7 days | % | how close the morning forecast came to the actual production (100 % − deviation); `forecast_kwh`, `actual_kwh`, `in_band`, `days`, `tendency_pct` (7 days: + too optimistic, − too pessimistic) |
 
 Forecast error sensors stay *unknown* (attribute `status: collecting`) until the nightly evaluation at
 02:30 has archived forecasts to compare: the short horizons after the first night, the day horizons
@@ -177,14 +177,16 @@ Five views, switched with the tabs at the top of the card:
   `layout: timeline` shows all days in one continuous chart instead.
 - **Today** – today alone in one larger chart, with the production so far, the expected total
   (so far plus the live forecast for the rest of the day), this morning's forecast, and the hit
-  rate and hours in range for the hours already finished.
+  rate and hours in range for the hours already finished. Below the hit rate: whether the forecast
+  was ▲ too pessimistic (more came) or ▼ too optimistic (less came); within ±3 % it is on target.
 - **Day by day** (`carousel`) – today, tomorrow and the day after one at a time, full width,
   switching automatically every `interval` seconds; the dots jump to a day.
 - **Plants** – the next days per plant as stacked areas (their top edge is the total) and today's
   actual production per plant as light lines on top, with a table of each plant's and the total
   daily energy (today with the actual production so far in brackets).
 - **Review** – step back through the last 7 days with ‹ ›: this morning's forecast against the
-  actual production, the hit rate and how many hours were inside the range.
+  actual production, the hit rate with its direction (too pessimistic / too optimistic) and how
+  many hours were inside the range.
 
 | Overview, one chart per day | `layout: timeline`, all days in one chart |
 |---|---|

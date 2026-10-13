@@ -28,7 +28,7 @@ from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 
 from .const import DOMAIN, TOTAL
 from .coordinator import MlPvCoordinator
-from .core.evaluation import today_so_far
+from .core.evaluation import tendency, today_so_far
 from .history import EntityProblem, entity_kind
 
 _LOGGER = logging.getLogger(__name__)
@@ -520,4 +520,6 @@ class HitRateSensor(ForecastEntity):
             "forecast_kwh": round(sum(d["forecast_kwh"] for d in days), 2) if days else None,
             "actual_kwh": round(sum(d["actual_kwh"] for d in days), 2) if days else None,
             "in_band": round(sum(bands) / len(bands), 1) if bands else None,
+            # signed: positive when the morning forecasts were too optimistic
+            "tendency_pct": tendency(days),
         }

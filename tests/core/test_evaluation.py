@@ -115,6 +115,7 @@ def test_day_review_hit_rate_band_and_hourly():
     assert review["actual_kwh"] == pytest.approx(2.88)
     assert review["hit_rate"] == pytest.approx(88.9, abs=0.1)
     assert review["in_band"] == 100.0
+    assert review["deviation_pct"] == pytest.approx(11.1, abs=0.1)  # forecast above: optimistic
     assert review["complete"] is True
     assert len(review["hourly"]) == 24
     ten = review["hourly"][10]
@@ -147,6 +148,7 @@ def test_today_so_far_scores_only_finished_hours():
     assert today["forecast_kwh"] == pytest.approx(3.2)  # the whole morning forecast
     assert today["hit_rate"] == pytest.approx(88.9, abs=0.1)  # 720 Wh against 800 Wh, 08–10
     assert today["in_band"] == 100.0
+    assert today["deviation_pct"] == pytest.approx(11.1, abs=0.1)
     assert today["until"] == day + 10 * 3600
 
 
@@ -158,6 +160,20 @@ def test_today_so_far_before_sunrise_or_without_morning_forecast():
     curve = [[int(t), 0.0, 0.0, 0.0] for t in day + np.arange(96) * 900]
     today = today_so_far(curve, quarters, np.zeros(24), day, day + 86400)
     assert today["hit_rate"] is None and today["in_band"] is None
+    assert today["deviation_pct"] is None
     nothing = today_so_far(None, np.array([]), np.array([]), day, day + 86400)
     assert nothing["actual_kwh"] == 0.0 and nothing["forecast_kwh"] is None
     assert nothing["hit_rate"] is None and nothing["until"] is None
+
+
+def test_tendency_weights_days_by_energy_and_skips_days_without_forecast():
+    from custom_components.ml_pv_forecast.core.evaluation import tendency
+
+    days = [
+        {"forecast_kwh": 9.0, "actual_kwh": 10.0},  # 1 kWh too low
+        {"forecast_kwh": 32.0, "actual_kwh": 30.0},  # 2 kWh too high
+        {"forecast_kwh": None, "actual_kwh": 20.0},
+    ]
+    assert tendency(days) == pytest.approx(2.5)  # +1 kWh over 40 kWh: slightly optimistic
+    assert tendency([{"forecast_kwh": None, "actual_kwh": 5.0}]) is None
+    assert tendency([]) is None

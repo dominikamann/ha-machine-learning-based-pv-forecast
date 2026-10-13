@@ -40,6 +40,9 @@ const TEXT = {
     produced: "Produced so far",
     expected: "Expected today",
     until: "until",
+    pessimistic: "too pessimistic",
+    optimistic: "too optimistic",
+    onTarget: "on target",
     hitRate: "Hit rate",
     inBand: "Hours in range",
     noMorning: "No morning forecast was recorded for this day.",
@@ -67,6 +70,9 @@ const TEXT = {
     produced: "Bisher erzeugt",
     expected: "Erwartet heute",
     until: "bis",
+    pessimistic: "zu pessimistisch",
+    optimistic: "zu optimistisch",
+    onTarget: "passt",
     hitRate: "Trefferquote",
     inBand: "Stunden im Band",
     noMorning: "Für diesen Tag wurde keine Morgenprognose gespeichert.",
@@ -583,13 +589,22 @@ class MlPvForecastCard extends HTMLElement {
       : undefined;
     const pct = (v) => (v === null || v === undefined ? "–" : `${Math.round(v)} %`);
     const until = today.until ? `${t.until} ${this._time(today.until)}` : undefined;
+    const direction = this._direction(today.deviation_pct, t);
     return `<div class="stats">${[
       this._stat(t.produced, this._kwh(produced)),
       this._stat(t.expected, this._kwh(produced + rest / 4 / 1000)),
       this._stat(t.morning, this._kwh(today.forecast_kwh ?? morningKwh)),
-      this._stat(t.hitRate, pct(today.hit_rate), until),
+      this._stat(t.hitRate, pct(today.hit_rate), [direction, until].filter(Boolean).join(" · ")),
       this._stat(t.inBand, pct(today.in_band), until),
     ].join("")}</div>`;
+  }
+
+  // Which way the morning forecast was off: ▲ more came than forecast, ▼ less.
+  _direction(deviation, t) {
+    if (deviation === null || deviation === undefined) return undefined;
+    if (Math.abs(deviation) <= 3) return t.onTarget;
+    const amount = `${Math.round(Math.abs(deviation))} %`;
+    return deviation < 0 ? `▲ ${amount} ${t.pessimistic}` : `▼ ${amount} ${t.optimistic}`;
   }
 
   _reviewStats(state, t) {
@@ -612,7 +627,7 @@ class MlPvForecastCard extends HTMLElement {
     return `${nav}<div class="stats">${[
       this._stat(t.morning, this._kwh(day.forecast_kwh)),
       this._stat(t.actual, this._kwh(day.actual_kwh)),
-      this._stat(t.hitRate, pct(day.hit_rate)),
+      this._stat(t.hitRate, pct(day.hit_rate), this._direction(day.deviation_pct, t)),
       this._stat(t.inBand, pct(day.in_band)),
     ].join("")}</div>${note}`;
   }

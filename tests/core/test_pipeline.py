@@ -109,3 +109,22 @@ def test_training_stacks_leads_and_skips_rows_without_weather():
     assert stacked.rows > single.rows
     assert stacked.rows < 2 * single.rows  # rows without lead-1 weather were skipped
     assert stacked.model.feature_version == FEATURE_VERSION and is_current(stacked.model)
+
+
+def test_day_so_far_lifts_the_later_hours_and_is_recorded():
+    from custom_components.ml_pv_forecast.core.nowcast import DayFactor
+
+    w = synthetic_weather(START_2024, 60 * 24)
+    y = synthetic_production(w)
+    now = int(w.times[-1]) + 3600
+    model = train_plant(w.times, y, w, LAT, LON, now, None, None, "h").model
+    hourly = synthetic_weather(now, 48, seed=5)
+    quarter = synthetic_weather(now, 192, interval=900, seed=5)
+    plain = forecast_plant("a", model, hourly, quarter, LAT, LON, now)
+    day = DayFactor(ratio=1.4, share=0.5)
+    lifted = forecast_plant("a", model, hourly, quarter, LAT, LON, now, day=day)
+    later = (lifted.quarter_times >= now + 7200) & (plain.quarter[:, 1] > 0)
+    assert (lifted.quarter[later, 1] > plain.quarter[later, 1]).all()
+    np.testing.assert_allclose(lifted.quarter_raw, plain.quarter_raw)
+    assert (lifted.day_ratio, lifted.day_share) == (1.4, 0.5)
+    assert (plain.day_ratio, plain.day_share) == (None, None)

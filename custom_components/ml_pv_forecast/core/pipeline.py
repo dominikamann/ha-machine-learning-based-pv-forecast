@@ -11,7 +11,7 @@ from .downscale import to_quarters
 from .evaluation import Correction
 from .features import build_features
 from .model import PlantModel, TrainResult, train
-from .nowcast import DEFAULT_TAU, adjust
+from .nowcast import DEFAULT_TAU, DayFactor, adjust
 from .weather import WeatherData, cloud_total
 
 HOUR = 3600
@@ -39,6 +39,8 @@ class PlantForecast:
     quarter_raw: np.ndarray  # after correction, before nowcast
     ratio: float | None = None
     quarter_model: np.ndarray | None = None  # pure model output (defaults to quarter_raw)
+    day_ratio: float | None = None  # actual/forecast since midnight, if it was used
+    day_share: float | None = None  # share of the day's forecast energy already past
 
     def energy(self, start: int, end: int) -> np.ndarray:
         if len(self.quarter_times):
@@ -146,6 +148,7 @@ def forecast_plant(
     correction: Correction | None = None,
     ratio: float | None = None,
     tau: float = DEFAULT_TAU,
+    day: DayFactor | None = None,
 ) -> PlantForecast:
     times = weather_hourly.times
     hourly = model.predict(build_features(with_lead(weather_hourly, now), latitude, longitude))
@@ -164,10 +167,20 @@ def forecast_plant(
     quarter_raw = quarter_raw[valid]
     quarter_model = quarter_model[valid]
     quarter = (
-        adjust(quarter_raw, (quarter_times - now) / 60, ratio, tau)
-        if ratio is not None
+        adjust(quarter_raw, (quarter_times - now) / 60, ratio, tau, day)
+        if ratio is not None or day is not None
         else quarter_raw.copy()
     )
     return PlantForecast(
-        plant_id, now, times, hourly, quarter_times, quarter, quarter_raw, ratio, quarter_model
+        plant_id,
+        now,
+        times,
+        hourly,
+        quarter_times,
+        quarter,
+        quarter_raw,
+        ratio,
+        quarter_model,
+        None if day is None else day.ratio,
+        None if day is None else day.share,
     )

@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS forecasts (
     start INTEGER NOT NULL, end INTEGER NOT NULL,
     p10 REAL NOT NULL, p50 REAL NOT NULL, p90 REAL NOT NULL,
     raw_p50 REAL NOT NULL, model_p50 REAL NOT NULL, ratio REAL,
-    cloud REAL NOT NULL, capacity REAL NOT NULL,
+    cloud REAL NOT NULL, capacity REAL NOT NULL, day_ratio REAL, day_share REAL,
     PRIMARY KEY (plant, horizon, issued_at)
 );
 CREATE TABLE IF NOT EXISTS actuals (
@@ -47,9 +47,17 @@ class ArchivedForecast:
     ratio: float | None
     cloud: float
     capacity: float
+    day_ratio: float | None = None  # actual/forecast since midnight when it was issued
+    day_share: float | None = None  # share of the day's forecast energy already past
 
 
 FORECAST_COLUMNS = [f.name for f in fields(ArchivedForecast)]
+INSERT_FORECAST = (
+    f"INSERT OR REPLACE INTO forecasts VALUES ({','.join('?' * len(FORECAST_COLUMNS))})"
+)
+NULLABLE = {"ratio", "day_ratio", "day_share"}
+# Columns added later, with their type; older archives get them instead of being replaced.
+ADDED_COLUMNS = {"day_ratio": "REAL", "day_share": "REAL"}
 
 
 @dataclass(frozen=True)
@@ -61,8 +69,9 @@ class EvalRow:
 
 def _finite(row: ArchivedForecast) -> bool:
     """Rows with NaN would violate NOT NULL (sqlite stores NaN as NULL)."""
-    values = [v for k, v in vars(row).items() if isinstance(v, float) and k != "ratio"]
-    return all(np.isfinite(values)) and (row.ratio is None or np.isfinite(row.ratio))
+    values = [v for k, v in vars(row).items() if isinstance(v, float) and k not in NULLABLE]
+    optional = [getattr(row, k) for k in NULLABLE if getattr(row, k) is not None]
+    return all(np.isfinite(values)) and all(np.isfinite(optional))
 
 
 class Archive:
@@ -86,6 +95,12 @@ class Archive:
         try:
             db.executescript(SCHEMA)
             columns = [row[1] for row in db.execute("PRAGMA table_info(forecasts)")]
+            missing = FORECAST_COLUMNS[len(columns) :]
+            if columns == FORECAST_COLUMNS[: len(columns)] and set(missing) <= set(ADDED_COLUMNS):
+                with db:
+                    for name in missing:
+                        db.execute(f"ALTER TABLE forecasts ADD COLUMN {name} {ADDED_COLUMNS[name]}")
+                columns = FORECAST_COLUMNS
             if columns != FORECAST_COLUMNS:
                 raise sqlite3.DatabaseError("outdated archive schema")
         except sqlite3.DatabaseError:
@@ -99,7 +114,7 @@ class Archive:
                 return
             with self._db:
                 self._db.executemany(
-                    "INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    INSERT_FORECAST,
                     [astuple(r) for r in rows if _finite(r)],
                 )
 

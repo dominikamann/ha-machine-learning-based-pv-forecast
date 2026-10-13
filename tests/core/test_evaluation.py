@@ -5,6 +5,7 @@ from custom_components.ml_pv_forecast.core.archive import ArchivedForecast, Eval
 from custom_components.ml_pv_forecast.core.evaluation import (
     Correction,
     compute_metrics,
+    day_from_rows,
     tau_from_rows,
 )
 
@@ -98,8 +99,8 @@ def test_tau_from_rows_uses_short_rows_with_ratio():
         row(500, 500, start=1800 * i, horizon="1h", issued=1800 * i, ratio=1.0) for i in range(60)
     ]
     assert tau_from_rows(rows) == 30.0  # ratio 1 everywhere: every tau ties, first grid value wins
-    assert tau_from_rows([row(500, 500, horizon="1h")]) == 90.0  # no ratio -> default
-    assert tau_from_rows([]) == 90.0
+    assert tau_from_rows([row(500, 500, horizon="1h")]) == 60.0  # no ratio -> default
+    assert tau_from_rows([]) == 60.0
 
 
 def test_day_review_hit_rate_band_and_hourly():
@@ -177,3 +178,23 @@ def test_tendency_weights_days_by_energy_and_skips_days_without_forecast():
     assert tendency(days) == pytest.approx(2.5)  # +1 kWh over 40 kWh: slightly optimistic
     assert tendency([{"forecast_kwh": None, "actual_kwh": 5.0}]) is None
     assert tendency([]) is None
+
+
+def test_day_from_rows_learns_from_short_rows_with_the_day_so_far():
+    from dataclasses import replace
+
+    from custom_components.ml_pv_forecast.core.nowcast import DEFAULT_DAY_TAU, DEFAULT_DAY_WEIGHT
+
+    rng = np.random.default_rng(2)
+    rows = []
+    for _ in range(800):
+        day, share, lead_h = rng.uniform(0.5, 1.5), rng.uniform(0, 1), int(rng.integers(1, 6))
+        g = np.exp(-lead_h)  # live decay 60 min, lead measured to the window's middle
+        actual = 500 * (1 + 0.4 * share * (day - 1) * (1 - g) * np.exp(-lead_h * 60 / 120.0))
+        start = lead_h * 3600 - 1800
+        r = row(500, actual, start=start, horizon="1h", issued=0, ratio=1.0)
+        rows.append(replace(r, forecast=replace(r.forecast, day_ratio=day, day_share=share)))
+    assert day_from_rows(rows, 60.0) == (pytest.approx(0.4), 120.0)
+    # rows without the day so far (archived before 0.7.0) keep the defaults
+    plain = [row(500, 500, start=1800, horizon="1h", issued=0, ratio=1.0)] * 600
+    assert day_from_rows(plain, 60.0) == (DEFAULT_DAY_WEIGHT, DEFAULT_DAY_TAU)

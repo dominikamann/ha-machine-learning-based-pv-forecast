@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import patch
 
+import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import issue_registry as ir
 
@@ -178,6 +179,30 @@ async def test_recent_actuals_are_backfilled_from_short_term_statistics(
             coordinator.archive.actuals, key, midnight, midnight + 86400
         )
         assert len(times) == 4 and wh.tolist() == [75.0] * 4
+
+
+async def test_day_factor_compares_today_so_far_with_the_forecast(recorder_mock, hass, open_meteo):
+    import numpy as np
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.ml_pv_forecast.core.pipeline import PlantForecast
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    midnight = int(dt_util.start_of_local_day().timestamp())
+    quarters = midnight + np.arange(96) * 900
+    raw = np.full((96, 3), 100.0)
+    coordinator.data[plant.plant_id] = PlantForecast(
+        plant.plant_id, midnight, quarters[::4], raw[::4] * 4, quarters, raw, raw.copy()
+    )
+    coordinator.actual_today[plant.plant_id] = (quarters[:24], np.full(24, 150.0))
+    day = coordinator._day_factor(plant, midnight)
+    assert day.ratio == pytest.approx(1.5)
+    assert day.share == pytest.approx(0.25)
+    assert (day.weight, day.tau) == (plant.day_weight, plant.day_tau)
+    coordinator.actual_today[plant.plant_id] = (quarters[:0], np.zeros(0))
+    assert coordinator._day_factor(plant, midnight) is None  # nothing measured yet today
 
 
 def test_morning_forecast_only_frozen_in_the_morning():

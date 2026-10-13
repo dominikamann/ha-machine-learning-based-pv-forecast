@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0 – 2026-10-13
+
+- Forecast: the short-term correction also uses **the day so far**. If today's production has been
+  above or below the forecast since midnight, the next hours lean that way – gently, the more the
+  further the day has gone, and fading over about four hours so a weather change in the afternoon
+  does little harm. In a backtest over a year on two plants this lowered the error 2–3 hours ahead
+  by about 0.2 points (significant), and the error over all horizons by 0.1 points.
+- Each plant learns how much to trust the day so far (weight and decay) from its own archive every
+  night, once about two weeks of data are there; until then the backtested defaults apply.
+- The live correction fades after about 60 instead of 90 minutes by default (also learned per
+  plant, as before).
+- The archive records the day so far with every forecast; existing archives are migrated, not
+  replaced.
+
 ## 0.6.3 – 2026-10-13
 
 - Card: the forecast is drawn as a line instead of a filled area, so the actual bars stand out.

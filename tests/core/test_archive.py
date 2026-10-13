@@ -102,3 +102,38 @@ def test_actuals_between(tmp_path):
     assert times.tolist() == [0, 900] and wh.tolist() == [1.0, 2.0]
     ar.close()
     assert ar.actuals("a", 0, 1800)[0].tolist() == []
+
+
+def test_day_so_far_is_stored_with_the_forecast(tmp_path):
+    from dataclasses import replace
+
+    ar = Archive(tmp_path / "a.db")
+    ar.add_forecasts([replace(fc(0, 3600, 5.0), day_ratio=1.2, day_share=0.4)])
+    ar.add_actuals("a", np.arange(0, 3600, 900), np.ones(4))
+    row = ar.evaluated("a", None, 0, 10**9)[0].forecast
+    assert (row.day_ratio, row.day_share) == (1.2, 0.4)
+    ar.close()
+
+
+def test_archive_from_before_the_day_factor_is_migrated_not_replaced(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "a.db"
+    old = sqlite3.connect(path)
+    old.executescript(
+        """CREATE TABLE forecasts (
+            plant TEXT NOT NULL, horizon TEXT NOT NULL, issued_at INTEGER NOT NULL,
+            start INTEGER NOT NULL, end INTEGER NOT NULL,
+            p10 REAL NOT NULL, p50 REAL NOT NULL, p90 REAL NOT NULL,
+            raw_p50 REAL NOT NULL, model_p50 REAL NOT NULL, ratio REAL,
+            cloud REAL NOT NULL, capacity REAL NOT NULL,
+            PRIMARY KEY (plant, horizon, issued_at));
+        INSERT INTO forecasts VALUES ('a','1h',0,0,3600,4,5,6,5,5,NULL,20,1000);"""
+    )
+    old.close()
+    ar = Archive(path)
+    assert not ar.recovered
+    ar.add_actuals("a", np.arange(0, 3600, 900), np.ones(4))
+    rows = ar.evaluated("a", None, 0, 10**9)
+    assert len(rows) == 1 and rows[0].forecast.day_ratio is None
+    ar.close()

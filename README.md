@@ -23,7 +23,8 @@ datasheet says it should do.
 - Energy forecasts as **P10 / P50 / P90** (pessimistic, expected, optimistic)
 - **Per plant and in total**
 - **Short-term correction from live production**: if a cloud passes right now, the next minutes
-  follow it
+  follow it; if the whole day so far has come in above or below the forecast, the next hours lean
+  that way too (gently, more the further the day has gone, learned per plant)
 - **Learns from its own mistakes**: every issued forecast is archived and compared with what really
   happened; a correction layer and the weekly retraining use those errors, and a new model only
   replaces the old one when it is measurably better
@@ -53,7 +54,8 @@ datasheet says it should do.
   The boosting is a small numpy implementation of the algorithm behind scikit-learn's
   `HistGradientBoostingRegressor` (tested against it), because scikit-learn cannot be installed on
   Home Assistant OS. The only extra dependency is scipy.
-- **Every night**: forecast error per horizon, correction layer, short-term decay; **every Sunday**:
+- **Every night**: forecast error per horizon, correction layer, short-term decay and the weight of
+  the day so far; **every Sunday**:
   retraining with a promotion gate.
 
 Open-Meteo's free API is for non-commercial use, which covers a private home. No API key is needed.
@@ -144,7 +146,8 @@ tariffs:
 
 The forecast is recalculated every 15 minutes, and the next hours follow the live production (if
 the plant is producing 20 % less than forecast right now, the next half hour is corrected and the
-correction fades over the following hours). `interval: 15m` makes evcc pick these updates up.
+correction fades over the following hours; if the day so far has been 15 % above the forecast, the
+next hours are lifted a little as well). `interval: 15m` makes evcc pick these updates up.
 
 Optional query parameters: `?plant=<plant id>` for a single plant and `?quantile=p10|p50|p90`
 (default `p50`; `p10` plans conservatively). The endpoint can be switched off in the integration

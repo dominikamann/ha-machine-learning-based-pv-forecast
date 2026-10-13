@@ -22,9 +22,23 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_ENTITIES, CONF_LIMIT_W, DOMAIN, SUBENTRY_PLANT, TOTAL
 from .core.archive import Archive, ArchivedForecast
-from .core.evaluation import Correction, Metrics, compute_metrics, day_review, tau_from_rows
+from .core.evaluation import (
+    Correction,
+    Metrics,
+    compute_metrics,
+    day_from_rows,
+    day_review,
+    tau_from_rows,
+)
 from .core.model import NotEnoughData, PlantModel, is_current, load_model, save_model
-from .core.nowcast import DEFAULT_TAU, live_ratio
+from .core.nowcast import (
+    DEFAULT_DAY_TAU,
+    DEFAULT_DAY_WEIGHT,
+    DEFAULT_TAU,
+    DayFactor,
+    day_ratio,
+    live_ratio,
+)
 from .core.pipeline import PlantForecast, forecast_plant, total_forecast, train_plant, window_cloud
 from .core.solar import sun_position
 from .core.weather import OpenMeteoClient, OpenMeteoError, WeatherData
@@ -77,6 +91,8 @@ class PlantRuntime:
     last_trained: int | None = None
     correction: Correction | None = None
     tau: float = DEFAULT_TAU
+    day_weight: float = DEFAULT_DAY_WEIGHT
+    day_tau: float = DEFAULT_DAY_TAU
     problem_since: datetime | None = None
     retry_at: datetime | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -337,6 +353,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         hourly, quarter = self._weather
         if hourly.times[-1] + hourly.interval <= now_ts:
             raise UpdateFailed("weather forecast expired")
+        midnight = int(dt_util.start_of_local_day().timestamp())
 
         forecasts: dict[str, PlantForecast] = {}
         actuals: dict[str, tuple[np.ndarray, np.ndarray]] = {}
@@ -373,6 +390,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 plant.correction,
                 ratio,
                 plant.tau,
+                self._day_factor(plant, midnight),
             )
         if not forecasts:
             return {}
@@ -380,7 +398,6 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         actuals[TOTAL] = _sum_actuals(list(actuals.values()))
         daily = self._daily_windows(now)
         self._freeze_morning = should_freeze(dt_util.as_local(now), self._morning_day)
-        midnight = int(dt_util.start_of_local_day().timestamp())
         await self.hass.async_add_executor_job(
             self._archive_cycle, forecasts, actuals, now_ts, daily, midnight
         )
@@ -412,6 +429,30 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             float(previous.raw_energy(start, end)[1]),
             float(elevation[0]),
             plant.model.capacity,
+        )
+
+    def _day_factor(self, plant: PlantRuntime, midnight: int) -> DayFactor | None:
+        """Today's production so far against what the last forecast expected for those quarters."""
+        previous = (self.data or {}).get(plant.plant_id)
+        times, wh = self.actual_today.get(plant.plant_id, (np.array([]), np.array([])))
+        if previous is None or plant.model is None:
+            return None
+        known = (times >= midnight) & np.isin(times, previous.quarter_times)
+        if not known.any():
+            return None
+        done = np.isin(previous.quarter_times, times[known])
+        forecast_done = float(previous.quarter_raw[done, 1].sum())
+        tomorrow = int(
+            dt_util.start_of_local_day(
+                dt_util.as_local(dt_util.utc_from_timestamp(midnight)).date() + timedelta(days=1)
+            ).timestamp()
+        )
+        day_total = float(previous.raw_energy(midnight, tomorrow)[1])
+        ratio = day_ratio(float(wh[known].sum()), forecast_done, plant.model.capacity)
+        if ratio is None or day_total <= 0:
+            return None
+        return DayFactor(
+            ratio, min(1.0, forecast_done / day_total), plant.day_weight, plant.day_tau
         )
 
     def _daily_windows(self, now: datetime) -> tuple[int, int, int, str] | None:
@@ -467,6 +508,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                         fc.ratio,
                         window_cloud(hourly, w_start, w_end),
                         capacity,
+                        fc.day_ratio,
+                        fc.day_share,
                     )
                 )
         self.archive.add_forecasts(rows)
@@ -563,6 +606,9 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                     Correction.from_rows, rows, now_ts
                 )
                 plant.tau = await self.hass.async_add_executor_job(tau_from_rows, rows)
+                plant.day_weight, plant.day_tau = await self.hass.async_add_executor_job(
+                    day_from_rows, rows, plant.tau
+                )
         await self.async_update_review()
         cutoff = now - RETENTION
         await self.hass.async_add_executor_job(

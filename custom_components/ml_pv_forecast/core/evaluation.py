@@ -8,7 +8,7 @@ import numpy as np
 
 from .archive import EvalRow
 from .gbm import GradientBoosting
-from .nowcast import DEFAULT_TAU, fit_tau
+from .nowcast import DEFAULT_TAU, fit_day, fit_tau
 
 DAY = 86400
 CORRECTION_MIN_DAYS = 30
@@ -139,6 +139,27 @@ def tau_from_rows(rows: list[EvalRow]) -> float:
         np.array([x.raw_p50 for x in f]),
         np.array([x.ratio for x in f]),
         lead,
+        np.array([r.actual for r in rows]),
+    )
+
+
+def day_from_rows(rows: list[EvalRow], tau: float) -> tuple[float, float]:
+    """Weight and decay of the day so far, learned from short-horizon rows that recorded it."""
+    rows = [
+        r
+        for r in rows
+        if r.forecast.horizon in SHORT_HORIZONS
+        and r.forecast.day_ratio is not None
+        and r.forecast.day_share is not None
+    ]
+    f = [r.forecast for r in rows]
+    return fit_day(
+        np.array([x.raw_p50 for x in f]),
+        np.array([1.0 if x.ratio is None else x.ratio for x in f]),
+        np.array([((x.start + x.end) / 2 - x.issued_at) / 60 for x in f]),
+        tau,
+        np.array([x.day_ratio for x in f]),
+        np.array([x.day_share for x in f]),
         np.array([r.actual for r in rows]),
     )
 

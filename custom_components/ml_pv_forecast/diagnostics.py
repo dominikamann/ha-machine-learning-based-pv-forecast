@@ -31,6 +31,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry) -> dict
                 "trained_at": p.model.trained_at,
             },
             "tau": p.tau,
+            "day_weight": p.day_weight,
+            "day_tau": p.day_tau,
             "correction": p.correction is not None,
             "metrics": {h: asdict(m) for h, m in c.metrics.get(pid, {}).items()},
         }

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The correction layer is only switched on when it reliably helps.** It must now be at least
+  2 % better than the plain model and consistently so over the 14 validation days (the same test
+  as for model variants); before, any gain counted. In a test where the model was right on
+  average, the old rule switched on a correction for a quarter of the plants, and it made the
+  forecast about 15 % worse on fresh weather – it had learned the weather of individual days.
+  The correction is also fitted weighted by energy, so noisy dim hours count less.
 - Card: the forecast line and its P10–P90 range now also cover today's past hours, showing what
   the live forecast expected for each hour shortly before it began (from the archived next-hour
   forecasts), next to the morning forecast and the actual bars.

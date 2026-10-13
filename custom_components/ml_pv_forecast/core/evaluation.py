@@ -9,6 +9,7 @@ import numpy as np
 from .archive import EvalRow
 from .gbm import GradientBoosting
 from .nowcast import DEFAULT_TAU, fit_day, fit_tau
+from .variants import choose
 
 DAY = 86400
 CORRECTION_MIN_DAYS = 30
@@ -71,17 +72,23 @@ def _row_features(rows: list[EvalRow]) -> np.ndarray:
     )
 
 
-def _fit(X: np.ndarray, y: np.ndarray) -> GradientBoosting:
+def _fit(X: np.ndarray, y: np.ndarray, weight: np.ndarray) -> GradientBoosting:
     return GradientBoosting(
         loss="squared_error", max_iter=100, learning_rate=0.05, min_samples_leaf=30
-    ).fit(X, y)
+    ).fit(X, y, sample_weight=weight)
 
 
 class Correction:
     """Learns the ratio actual / model P50 from archived hourly windows.
 
     Trained on the pure model output (before correction and nowcast) and on 1-hour windows, so it
-    is fitted on exactly what it is later applied to: hourly model predictions.
+    is fitted on exactly what it is later applied to: hourly model predictions. Hours are weighted
+    by the model's energy: the ratio of a dim hour is noisy and matters little in Wh.
+
+    The archive holds the output of whichever model was active, so the correction also learns
+    from models that were replaced since. Keeping only rows of the current model is no option:
+    models are refitted weekly and the correction needs a month of rows. The validation on the
+    last days, all by recent models, guards against a correction that no longer fits.
     """
 
     def __init__(self, estimator: GradientBoosting) -> None:
@@ -99,7 +106,11 @@ class Correction:
 
     @staticmethod
     def from_rows(rows: list[EvalRow], now: int) -> Correction | None:
-        """A correction that beats the uncorrected model on the last 14 days, else None."""
+        """A correction that beats the uncorrected model on the last 14 days, else None.
+
+        Like a model variant it must be clearly and consistently better, day by day
+        (``variants.choose``): a small gain on two weeks of data is often just noise.
+        """
         rows = [
             r
             for r in rows
@@ -118,13 +129,16 @@ class Correction:
         validation = start >= now - VALIDATION_DAYS * DAY
         if validation.sum() < 20 or (~validation).sum() < 100:
             return None
-        trial = _fit(X[~validation], target[~validation])
+        trial = _fit(X[~validation], target[~validation], p50[~validation])
         corrected = p50[validation] * np.clip(trial.predict(X[validation]), 0.5, 1.5)
-        if np.mean(np.abs(corrected - actual[validation])) >= np.mean(
-            np.abs(p50[validation] - actual[validation])
-        ):
+        _, day = np.unique(start[validation] // DAY, return_inverse=True)
+        day_errors = {
+            "raw": np.bincount(day, np.abs(p50[validation] - actual[validation])),
+            "corrected": np.bincount(day, np.abs(corrected - actual[validation])),
+        }
+        if choose(day_errors, "raw") != "corrected":
             return None
-        return Correction(_fit(X, target))
+        return Correction(_fit(X, target, p50))
 
 
 def tau_from_rows(rows: list[EvalRow]) -> float:

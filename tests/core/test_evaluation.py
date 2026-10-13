@@ -84,6 +84,23 @@ def test_correction_learns_from_uncorrected_model_output():
     assert f[0] == pytest.approx(0.8, abs=0.05)
 
 
+@pytest.mark.parametrize("seed", [1, 5])
+def test_correction_is_dropped_when_it_only_learned_the_weather_of_some_days(seed):
+    # The model is right on average; each day's weather made it too high or too low as a whole.
+    # A correction can fit those days (it knows the day of the year) and look better on the
+    # validation days by chance; on fresh weather it made the forecast about 15 % worse.
+    rng = np.random.default_rng(seed)
+    days = range(60, 120)
+    weather = rng.uniform(0.7, 1.3, len(days))
+    rows = [
+        row(p, p * weather[i] * rng.uniform(0.9, 1.1), start=d * DAY + h * 3600, horizon="1h")
+        for i, d in enumerate(days)
+        for h in range(6, 18)
+        for p in [rng.uniform(200, 900)]
+    ]
+    assert Correction.from_rows(rows, 120 * DAY) is None
+
+
 def test_correction_ignores_day_windows():
     rows = [row(500, 400, start=d * DAY) for d in range(60, 120)]
     assert Correction.from_rows(rows, 120 * DAY) is None

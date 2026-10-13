@@ -119,7 +119,7 @@ Per plant and for the total:
 | Today, today remaining, tomorrow, day after tomorrow | kWh | `p10`, `p90` |
 | Peak power today, peak power tomorrow | W | `time` |
 | Forecast curve (state: today in kWh) | kWh | `hourly` (72 h, Wh per hour), `quarters` (W), `morning` (this morning's forecast for today, W) |
-| Forecast error 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count` |
+| Forecast error 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count`, `below_p10_pct`, `above_p90_pct`, `score_pct` |
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
 | Model variant | standard / weather_plus / short_memory / weather_plus_short_memory / fallback | `scores` (quantile score of each variant at the last training, % of the actual energy), `since`, `testing` |
 | Production now | W | live sum of the plant's sensors (energy meters: rise over the last 5 min) |
@@ -130,7 +130,9 @@ Forecast error sensors stay *unknown* (attribute `status: collecting`) until the
 02:30 has archived forecasts to compare: the short horizons after the first night, the day horizons
 after one to two days. The forecast error is the mean absolute error over the last 30 days as a percentage of actual production
 (lower is better). `skill` compares with simply repeating the previous period (above 0 is better
-than that). Installations from before 0.6.1 keep their entity IDs (`…_accuracy_…`); only the
+than that). `below_p10_pct` and `above_p90_pct` check the P10–P90 band: about 10 % each is right;
+more means the band is too narrow, clearly less that it is wider than it needs to be. `score_pct`
+rates P50 and the band together (the quantile score also used to pick the model variant). Installations from before 0.6.1 keep their entity IDs (`…_accuracy_…`); only the
 names changed, so dashboards and automations keep working.
 
 ## Model variants

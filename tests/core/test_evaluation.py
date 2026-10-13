@@ -50,6 +50,16 @@ def test_metrics_values_and_zero_rows_ignored():
     assert m.skill == pytest.approx(0.8)
 
 
+def test_metrics_check_the_band():
+    # row(): P10 = 0.8 * P50, P90 = 1.2 * P50
+    rows = [row(100, 70), row(100, 100), row(100, 100), row(100, 130)]
+    m = compute_metrics(rows)
+    assert m.below_p10 == 25.0 and m.above_p90 == 25.0
+    # quantile score: 2/3 of the summed pinball losses, mean actual 100 Wh
+    # actual 70 or 130: 9 + 15 + 5 = 29; actual 100: 2 + 0 + 2 = 4
+    assert m.score == pytest.approx((29 + 4 + 4 + 29) / 4 * 2 / 3)
+
+
 def test_metrics_none_when_empty():
     assert compute_metrics([row(0, 0)]) is None
 

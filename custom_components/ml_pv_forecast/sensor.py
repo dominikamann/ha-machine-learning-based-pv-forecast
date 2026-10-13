@@ -303,6 +303,10 @@ class AccuracySensor(ForecastEntity):
             "bias_kwh": round(m.bias / 1000, 3),
             "skill": None if m.skill is None else round(m.skill, 3),
             "count": m.count,
+            # band check: about 10 % each is right, more means the band is too narrow
+            "below_p10_pct": None if m.below_p10 is None else round(m.below_p10, 1),
+            "above_p90_pct": None if m.above_p90 is None else round(m.above_p90, 1),
+            "score_pct": None if m.score is None else round(m.score, 1),
         }
 
 

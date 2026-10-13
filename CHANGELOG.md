@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Forecast error sensors also check the P10–P90 band per horizon: `below_p10_pct` and
+  `above_p90_pct` (about 10 % each is right) and `score_pct` (P50 and band together).
 - Card: plant names and the card title are escaped before they go into the page, and the card
   only uses this integration's sensors (before, any entity with the same attributes was picked up,
   and its text could run as code in the dashboard).

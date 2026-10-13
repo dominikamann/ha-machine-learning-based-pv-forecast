@@ -8,6 +8,7 @@ import numpy as np
 
 from .archive import EvalRow
 from .gbm import GradientBoosting
+from .model import quantile_score
 from .nowcast import DEFAULT_TAU, fit_day, fit_tau
 from .variants import choose
 
@@ -25,6 +26,11 @@ class Metrics:
     bias: float  # Wh, positive = forecast too high
     skill: float | None  # 1 - MAE / persistence MAE
     count: int
+    # How well the P10–P90 band fits: share of windows below P10 / above P90 (10 % each is right),
+    # and the quantile score of the whole band in percent of mean actual (lower is better).
+    below_p10: float | None = None
+    above_p90: float | None = None
+    score: float | None = None
 
 
 def compute_metrics(rows: list[EvalRow]) -> Metrics | None:
@@ -33,6 +39,7 @@ def compute_metrics(rows: list[EvalRow]) -> Metrics | None:
         return None
     forecast = np.array([r.forecast.p50 for r in rows])
     actual = np.array([r.actual for r in rows])
+    band = np.array([(r.forecast.p10, r.forecast.p50, r.forecast.p90) for r in rows])
     error = forecast - actual
     mae = float(np.mean(np.abs(error)))
     mean_actual = float(actual.mean())
@@ -48,6 +55,11 @@ def compute_metrics(rows: list[EvalRow]) -> Metrics | None:
         bias=float(error.mean()),
         skill=skill,
         count=len(rows),
+        below_p10=float(np.mean(actual < band[:, 0]) * 100),
+        above_p90=float(np.mean(actual > band[:, 2]) * 100),
+        score=float(quantile_score(band, actual).mean() / mean_actual * 100)
+        if mean_actual > 0
+        else None,
     )
 
 

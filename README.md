@@ -188,6 +188,8 @@ Five views, switched with the tabs at the top of the card:
 | Overview, one chart per day | `layout: timeline`, all days in one chart |
 |---|---|
 | ![Overview](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/overview.png) | ![Timeline](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/timeline.png) |
+| **Today** – production so far, expected total, hit rate so far | **Review** – a past day: morning forecast against actual |
+| ![Today](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/today.png) | ![Review](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/review.png) |
 | **Days** – one day at a time, rotating | **Plants** – per plant, stacked, with totals |
 | ![Days](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/days.png) | ![Plants](https://raw.githubusercontent.com/dominikamann/ha-machine-learning-based-pv-forecast/main/images/plants.png) |
 | **On a phone** | |

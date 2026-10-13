@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 – 2026-10-13
+
+- The accuracy sensors are now called **Forecast error** (German: *Prognosefehler*): they show
+  the deviation in %, lower is better, and "Accuracy 22 %" read like a poor score. Existing
+  installations keep their entity IDs.
+
 ## 0.6.0 – 2026-10-13
 
 - Card: new **Today** view – today's chart with the production so far, the expected total (so far

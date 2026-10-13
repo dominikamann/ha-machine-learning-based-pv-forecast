@@ -4,15 +4,15 @@ header:
   title: Forecast error (lower is better)
 graph_span: 12w
 series:
-  - entity: sensor.pv_forecast_total_accuracy_30_minutes
+  - entity: sensor.pv_forecast_total_forecast_error_30_minutes
     name: 30 min
     group_by: { func: last, duration: 1d }
-  - entity: sensor.pv_forecast_total_accuracy_1_hour
+  - entity: sensor.pv_forecast_total_forecast_error_1_hour
     name: 1 h
     group_by: { func: last, duration: 1d }
-  - entity: sensor.pv_forecast_total_accuracy_6_hours
+  - entity: sensor.pv_forecast_total_forecast_error_6_hours
     name: 6 h
     group_by: { func: last, duration: 1d }
-  - entity: sensor.pv_forecast_total_accuracy_day_ahead
+  - entity: sensor.pv_forecast_total_forecast_error_day_ahead
     name: Day ahead
     group_by: { func: last, duration: 1d }

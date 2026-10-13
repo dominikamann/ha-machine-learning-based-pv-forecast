@@ -112,19 +112,19 @@
         "name": "Forecast curve"
       },
       "accuracy_30m": {
-        "name": "Accuracy 30 minutes"
+        "name": "Forecast error 30 minutes"
       },
       "accuracy_1h": {
-        "name": "Accuracy 1 hour"
+        "name": "Forecast error 1 hour"
       },
       "accuracy_6h": {
-        "name": "Accuracy 6 hours"
+        "name": "Forecast error 6 hours"
       },
       "accuracy_today_morning": {
-        "name": "Accuracy today (morning forecast)"
+        "name": "Forecast error today (morning forecast)"
       },
       "accuracy_day_ahead": {
-        "name": "Accuracy day ahead"
+        "name": "Forecast error day ahead"
       },
       "status": {
         "name": "Model status",

@@ -29,7 +29,7 @@ datasheet says it should do.
   replaces the old one when it is measurably better
 - Forecast in the **Energy dashboard**
 - Endpoint for **[evcc](https://evcc.io)**
-- Accuracy sensors per horizon, so you can watch the model improve
+- Forecast error sensors per horizon, so you can watch the model improve
 
 ## How it works
 
@@ -53,7 +53,7 @@ datasheet says it should do.
   The boosting is a small numpy implementation of the algorithm behind scikit-learn's
   `HistGradientBoostingRegressor` (tested against it), because scikit-learn cannot be installed on
   Home Assistant OS. The only extra dependency is scipy.
-- **Every night**: accuracy per horizon, correction layer, short-term decay; **every Sunday**:
+- **Every night**: forecast error per horizon, correction layer, short-term decay; **every Sunday**:
   retraining with a promotion gate.
 
 Open-Meteo's free API is for non-commercial use, which covers a private home. No API key is needed.
@@ -110,17 +110,18 @@ Per plant and for the total:
 | Today, today remaining, tomorrow, day after tomorrow | kWh | `p10`, `p90` |
 | Peak power today, peak power tomorrow | W | `time` |
 | Forecast curve (state: today in kWh) | kWh | `hourly` (72 h, Wh per hour), `quarters` (W), `morning` (this morning's forecast for today, W) |
-| Accuracy 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count` |
+| Forecast error 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count` |
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
 | Production now | W | live sum of the plant's sensors (energy meters: rise over the last 5 min) |
 | Production today | kWh | from the 15-minute actuals the forecast is checked against (a few minutes behind) |
 | Hit rate yesterday, hit rate 7 days | % | how close the morning forecast came to the actual production (100 % − deviation); `forecast_kwh`, `actual_kwh`, `in_band`, `days` |
 
-Accuracy sensors stay *unknown* (attribute `status: collecting`) until the nightly evaluation at
+Forecast error sensors stay *unknown* (attribute `status: collecting`) until the nightly evaluation at
 02:30 has archived forecasts to compare: the short horizons after the first night, the day horizons
-after one to two days. Accuracy is the mean absolute error over the last 30 days as a percentage of actual production
+after one to two days. The forecast error is the mean absolute error over the last 30 days as a percentage of actual production
 (lower is better). `skill` compares with simply repeating the previous period (above 0 is better
-than that).
+than that). Installations from before 0.6.1 keep their entity IDs (`…_accuracy_…`); only the
+names changed, so dashboards and automations keep working.
 
 ## evcc
 
@@ -263,7 +264,7 @@ Problems appear under *Settings → Repairs*:
 - **Sensor problem**: a production sensor is missing or has the wrong unit. Only that plant stops.
 - **Training failed**: the previous model stays active.
 
-*Download diagnostics* on the integration gives model status and accuracy figures (location
+*Download diagnostics* on the integration gives model status and forecast error figures (location
 redacted) for bug reports.
 
 ## License

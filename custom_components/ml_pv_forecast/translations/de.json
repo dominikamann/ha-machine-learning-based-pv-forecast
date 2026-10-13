@@ -112,19 +112,19 @@
         "name": "Prognoseverlauf"
       },
       "accuracy_30m": {
-        "name": "Genauigkeit 30 Minuten"
+        "name": "Prognosefehler 30 Minuten"
       },
       "accuracy_1h": {
-        "name": "Genauigkeit 1 Stunde"
+        "name": "Prognosefehler 1 Stunde"
       },
       "accuracy_6h": {
-        "name": "Genauigkeit 6 Stunden"
+        "name": "Prognosefehler 6 Stunden"
       },
       "accuracy_today_morning": {
-        "name": "Genauigkeit heute (Morgenprognose)"
+        "name": "Prognosefehler heute (Morgenprognose)"
       },
       "accuracy_day_ahead": {
-        "name": "Genauigkeit Vortagesprognose"
+        "name": "Prognosefehler Vortagesprognose"
       },
       "status": {
         "name": "Modellstatus",

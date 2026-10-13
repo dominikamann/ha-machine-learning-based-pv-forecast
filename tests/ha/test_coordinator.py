@@ -15,6 +15,7 @@ async def fail():
     raise OpenMeteoError("down")
 
 
+@pytest.mark.slow
 async def test_setup_trains_and_forecasts(recorder_mock, hass, open_meteo):
     entry = await setup_plant(hass, open_meteo)
     assert entry.state is ConfigEntryState.LOADED
@@ -119,6 +120,7 @@ async def test_sensor_missing_for_long_raises_repair(recorder_mock, hass, open_m
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"entity_{plant.plant_id}") is not None
 
 
+@pytest.mark.slow
 async def test_plant_without_model_trains_once_its_sensor_is_back(recorder_mock, hass, open_meteo):
     entry = await setup_plant(hass, open_meteo)
     coordinator = entry.runtime_data
@@ -131,6 +133,7 @@ async def test_plant_without_model_trains_once_its_sensor_is_back(recorder_mock,
     assert plant.model is not None and plant.error is None
 
 
+@pytest.mark.slow
 async def test_retrain_service_trains_named_or_all_plants(recorder_mock, hass, open_meteo):
     entry = await setup_plant(hass, open_meteo)
     plant = next(iter(entry.runtime_data.plants.values()))
@@ -276,6 +279,7 @@ def test_morning_forecast_only_frozen_in_the_morning():
     assert not should_freeze(datetime(2026, 10, 12, 6, 0, tzinfo=tz), "2026-10-12")
 
 
+@pytest.mark.slow
 @pytest.mark.all_variants
 async def test_variants_option_off_trains_only_the_standard(recorder_mock, hass, open_meteo):
     from custom_components.ml_pv_forecast.const import CONF_VARIANTS

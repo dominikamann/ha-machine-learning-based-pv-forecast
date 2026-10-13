@@ -165,6 +165,9 @@ def parse_block(
     if not data or "time" not in data:
         raise OpenMeteoError(f"response has no {block} data")
     # Open-Meteo labels radiation with the end of the interval it averages; we key by start.
+    # Instantaneous values (temperature, clouds, wind, ...) are valid at that end, so they describe
+    # the end of the interval. Moving them to its middle (mean of start and end) was tried on two
+    # real plants over a year (October 2026 backtest): no gain, so they stay as they are.
     times = np.asarray(data["time"], dtype=np.int64) - interval
     n = len(times)
     multi = suffix is not None

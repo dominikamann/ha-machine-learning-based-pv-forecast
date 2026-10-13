@@ -106,6 +106,7 @@ def _nan_stat(values: np.ndarray, count: np.ndarray, fn) -> np.ndarray:
 
 def _ensemble_columns(weather: WeatherData) -> list[np.ndarray]:
     ghi, cloud = weather.ens_ghi, weather.ens_cloud
+    assert ghi is not None and cloud is not None  # filled in WeatherData.__post_init__
     count = np.isfinite(ghi).sum(axis=1).astype(float)
     mean = _nan_stat(ghi, count, lambda f, v, c: f.sum(axis=1) / c)
     spread = _nan_stat(

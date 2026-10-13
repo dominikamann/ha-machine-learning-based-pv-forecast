@@ -1,5 +1,3 @@
-import pickle
-
 import numpy as np
 import pytest
 from sklearn.ensemble import HistGradientBoostingRegressor
@@ -89,10 +87,16 @@ def test_quantiles_learn_when_many_targets_sit_on_the_maximum():
     assert ours == pytest.approx(np.mean(capped_t <= ref.predict(Xt) + 1e-3), abs=0.02)
 
 
-def test_nan_features_and_pickle_roundtrip():
+@pytest.mark.parametrize("bins", [1, 256])
+def test_bins_must_fit_in_a_byte(bins):
+    with pytest.raises(ValueError, match="max_bins"):
+        GradientBoosting(max_bins=bins)
+
+
+def test_nan_features_and_array_roundtrip():
     X, y = make_data(3000)
     X[::7, 1] = np.nan
     model = GradientBoosting(loss="quantile", quantile=0.5).fit(X, y)
     p = model.predict(X)
     assert np.isfinite(p).all()
-    np.testing.assert_allclose(pickle.loads(pickle.dumps(model)).predict(X), p)
+    np.testing.assert_array_equal(GradientBoosting.from_arrays(model.to_arrays()).predict(X), p)

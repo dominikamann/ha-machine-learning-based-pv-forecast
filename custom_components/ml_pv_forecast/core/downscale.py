@@ -10,7 +10,12 @@ HOUR = 3600
 def to_quarters(
     hour_times: np.ndarray, hourly: np.ndarray, quarter_times: np.ndarray, quarter_ghi: np.ndarray
 ) -> np.ndarray:
-    """Split each hourly value over its quarters in proportion to the quarter-hour GHI."""
+    """Split each hourly value over its quarters in proportion to the quarter-hour GHI.
+
+    Splitting by the plant's own mix of the virtual planes (its NNLS weights) instead was tried
+    on two real plants (October 2026, ~550 quarters each): slightly worse (13.6 → 13.9 % and
+    19.7 → 20.7 % error per quarter), so GHI it stays.
+    """
     hour_start = quarter_times - quarter_times % HOUR
     pos = np.searchsorted(hour_times, hour_start)
     pos_c = np.minimum(pos, len(hour_times) - 1)

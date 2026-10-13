@@ -29,7 +29,7 @@ from homeassistant.util.unit_conversion import EnergyConverter, PowerConverter
 from .const import DOMAIN, TOTAL
 from .coordinator import MlPvCoordinator
 from .core.evaluation import tendency, today_so_far
-from .core.variants import STANDARD, VARIANTS
+from .core.variants import VARIANTS
 from .history import EntityProblem, entity_kind
 
 _LOGGER = logging.getLogger(__name__)
@@ -334,15 +334,12 @@ class StatusSensor(ForecastEntity):
             return None
         plant = self.coordinator.plants[self._plant_id]
         model = plant.model
-        # vars(): models saved before 0.3 have no history fields
-        start, end = (
-            (vars(model).get(k, 0) for k in ("history_start", "history_end")) if model else (0, 0)
-        )
+        start, end = (model.history_start, model.history_end) if model else (0, 0)
         days = round((end - start) / 86400) if start and end else None
         return {
             "model": None if model is None else model.kind,
             "last_trained": None if plant.last_trained is None else _iso(plant.last_trained),
-            "rows": vars(model).get("rows", plant.rows) if model else plant.rows,
+            "rows": model.rows if model else plant.rows,
             "history_from": _iso(start) if start else None,
             "history_days": days,
             "full_year": None if days is None else days >= 365,
@@ -372,16 +369,16 @@ class VariantSensor(ForecastEntity):
             return None
         if model.kind != "gbm":
             return "fallback"  # the simple model: first weeks, or it beat every variant
-        return vars(model).get("variant", STANDARD.key)
+        return model.variant
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         plant = self.coordinator.plants[self._plant_id]
-        stored = vars(plant.model) if plant.model is not None else {}
-        since = stored.get("variant_since") or stored.get("trained_at")
+        model = plant.model
+        since = (model.variant_since or model.trained_at) if model else None
         return {
             # holdout quantile score of every variant at the last training, % of the actual energy
-            "scores": plant.variant_scores or stored.get("variant_scores", {}),
+            "scores": plant.variant_scores or (model.variant_scores if model else {}),
             "since": _iso(since) if since else None,
             "testing": len(self.coordinator.variants) > 1,
         }

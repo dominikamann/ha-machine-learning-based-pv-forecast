@@ -40,8 +40,8 @@ def hourly_rows(
     out = []
     for hour in np.unique(hours):
         part = rows[hours == hour]
-        values = [measured.get(int(t)) for t in part[:, 0]]
-        if len(part) != HOUR // QUARTER or any(v is None for v in values):
+        values = [measured[t] for t in part[:, 0].astype(np.int64).tolist() if t in measured]
+        if len(part) != HOUR // QUARTER or len(values) != len(part):
             continue
         p10, p50, p90 = part[:, 1:].sum(axis=0)
         out.append(

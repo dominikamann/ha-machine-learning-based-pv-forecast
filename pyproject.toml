@@ -9,6 +9,8 @@ dev = [
   "scikit-learn>=1.6",  # reference implementation in tests only
   "scipy>=1.13",
   "ruff",
+  "pyright>=1.1.414",
+  "pytest-cov>=6.0.0",
 ]
 
 [tool.uv]
@@ -18,7 +20,13 @@ package = false
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
-markers = ["all_variants: train every model variant (slow); other tests train only the standard"]
+markers = [
+  "all_variants: train every model variant (slow); other tests train only the standard",
+  "slow: trains models on months of data; skip with -m 'not slow' for a quick run",
+]
+
+[tool.coverage.run]
+source = ["custom_components", "tools"]
 
 [tool.ruff]
 target-version = "py313"
@@ -26,3 +34,16 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+include = ["custom_components", "tools"]
+pythonVersion = "3.13"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+# Home Assistant's own patterns: entity properties over cached_property, lazily exported names
+reportIncompatibleVariableOverride = false
+reportPrivateImportUsage = false
+# archive and weather are set during setup; asserting that at every use would only add noise
+reportOptionalMemberAccess = "warning"
+reportOptionalSubscript = "warning"

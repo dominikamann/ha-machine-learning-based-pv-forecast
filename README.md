@@ -262,23 +262,54 @@ To see how well the model works on your data before relying on it:
 ```bash
 uv sync
 uv run python tools/backtest.py --url http://homeassistant.local:8123 \
-  --token "$HA_TOKEN" --entity sensor.your_pv_power
+  --token "$HA_TOKEN" --entity sensor.your_pv_power [--limit 600] [--cache weather] [--markdown]
 ```
 
-It trains on everything except the last 12 months and reports the daily error of the model and of
-a physics baseline over those 12 months. The model is trained once and not updated during those
-12 months, so live results with weekly retraining and the correction layer tend to be better.
+It trains once on everything except the last 12 months (all model variants, as the integration
+does) and scores the model over those 12 months for each forecast lead: the same day, one and two
+days ahead. `--limit` is the plant's export or inverter limit in W, `--cache` keeps the downloaded
+weather for the next run, `--markdown` prints the table below. Days on which the plant gave less
+than a tenth of what the physics baseline expected (switched off, broken, under snow) are left out.
 
-On two real plants the daily error over 12 months (days on which a plant was switched off
-excluded) was:
+Only the model is scored: it is not retrained during the 12 months, and the correction layer, the
+short-term adjustment and the band calibration of the running integration come on top.
 
-| | Today | Tomorrow |
-|---|---|---|
-| Plant 1 | 9.3 % | 11.7 % |
-| Plant 2 | 11.4 % | 13.6 % |
+## Evaluation
 
-Before version 0.2.0 (one weather model, trained on same-day forecasts only) tomorrow's error was
-20.8 % and 24.8 %.
+Backtest of version 0.9.0 on two real plants, 12 months (October 2025 to October 2026).
+
+| Plant 1 – roof, three orientations | same day | 1 day ahead | 2 days ahead |
+|---|---|---|---|
+| Daily energy error (nMAE) | 9.3 % | 11.5 % | 13.6 % |
+| Daily energy bias | +0.5 % | +0.1 % | +0.7 % |
+| Skill vs. physics baseline | +0.15 | +0.17 | +0.18 |
+| Skill vs. persistence | +0.73 | +0.70 | +0.67 |
+| Hourly quantile score – model / physics | 10.5 / 14.2 % | 12.3 / 17.1 % | 13.5 / 18.2 % |
+| Hours below P10 / P50 / P90 (ideal 10 / 50 / 90 %) | 12 / 40 / 64 % | 11 / 38 / 65 % | 12 / 38 / 65 % |
+
+| Plant 2 – balcony plant, 600 W limit | same day | 1 day ahead | 2 days ahead |
+|---|---|---|---|
+| Daily energy error (nMAE) | 10.4 % | 12.7 % | 15.2 % |
+| Daily energy bias | +0.6 % | +0.2 % | +0.1 % |
+| Skill vs. physics baseline | +0.20 | +0.15 | +0.17 |
+| Skill vs. persistence | +0.73 | +0.69 | +0.67 |
+| Hourly quantile score – model / physics | 11.8 / 18.2 % | 13.6 / 20.8 % | 15.1 / 22.0 % |
+| Hours below P10 / P50 / P90 (ideal 10 / 50 / 90 %) | 13 / 44 / 71 % | 13 / 42 / 71 % | 14 / 41 / 71 % |
+
+How to read it:
+
+- **nMAE**: the mean error of the daily energy in percent of the mean daily energy.
+- **Skill**: 1 − error of the model / error of the reference (1 = perfect, 0 = no better than the
+  reference). *Physics baseline* is a fitted irradiance model (the integration's fallback model);
+  *persistence* says "the last complete day happens again".
+- **Quantile score**: the error of P10, P50 and P90 together (pinball loss, an estimate of the
+  CRPS) per hour, in percent of the mean hourly energy; lower is better.
+- **Hours below P10 / P50 / P90**: how well the band fits. The model's P90 is too low (the actual
+  value lies above it in about a third of the hours instead of a tenth); the live band calibration
+  widens it partly, and calibrating it at training time is the next step (see `TODO.md`).
+
+Plant 2 was switched off for about two months; those days are left out (59–60 per lead). Plant 1
+lost 1–2 days.
 
 ## Retrain now
 

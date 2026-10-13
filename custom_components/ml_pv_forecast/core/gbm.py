@@ -56,6 +56,10 @@ class _Binner:
         return out
 
 
+TREE_FIELDS = ("feature", "threshold", "left", "right", "value")
+TREE_DTYPES = (np.int32, np.int32, np.int32, np.int32, float)
+
+
 class _Tree:
     """Flat arrays; a node is a leaf when feature == -1. Rows with bin <= threshold go left."""
 
@@ -114,6 +118,9 @@ class GradientBoosting:
     ) -> None:
         if loss not in ("quantile", "squared_error"):
             raise ValueError(f"unknown loss {loss!r}")
+        if not 2 <= max_bins <= 255:
+            # bins are stored as uint8 and the missing-value bin comes on top (index max_bins)
+            raise ValueError(f"max_bins must be between 2 and 255, not {max_bins}")
         self.loss = loss
         self.quantile = quantile
         self.learning_rate = learning_rate
@@ -249,3 +256,44 @@ class GradientBoosting:
         for tree in self.trees:
             out += _predict_tree(tree, Xb)
         return out
+
+    def to_arrays(self) -> dict[str, np.ndarray]:
+        """The fitted model as plain arrays (for ``np.savez``; no pickle needed)."""
+        trees = self.trees or [tuple(np.array([], dtype=d) for d in TREE_DTYPES)]
+        return {
+            "params": np.array(
+                [self.quantile, self.learning_rate, self.l2, self.baseline], dtype=float
+            ),
+            "settings": np.array(
+                [self.max_iter, self.max_leaf_nodes, self.min_samples_leaf, self.max_bins]
+            ),
+            "loss": np.array(self.loss),
+            "edge_sizes": np.array([len(e) for e in self.binner.edges], dtype=np.int64),
+            "edges": np.concatenate([*self.binner.edges, np.array([])]),
+            "tree_sizes": np.array([len(t[0]) for t in self.trees], dtype=np.int64),
+            **{name: np.concatenate([t[i] for t in trees]) for i, name in enumerate(TREE_FIELDS)},
+        }
+
+    @classmethod
+    def from_arrays(cls, arrays: dict[str, np.ndarray]) -> GradientBoosting:
+        quantile, learning_rate, l2, baseline = arrays["params"].tolist()
+        max_iter, max_leaf_nodes, min_samples_leaf, max_bins = arrays["settings"].tolist()
+        model = cls(
+            str(arrays["loss"]),
+            quantile,
+            learning_rate,
+            int(max_iter),
+            int(max_leaf_nodes),
+            int(min_samples_leaf),
+            l2,
+            int(max_bins),
+        )
+        model.baseline = baseline
+        model.binner.edges = np.split(arrays["edges"], np.cumsum(arrays["edge_sizes"])[:-1])
+        cuts = np.cumsum(arrays["tree_sizes"])[:-1]
+        columns = [
+            np.split(arrays[name].astype(dtype), cuts)
+            for name, dtype in zip(TREE_FIELDS, TREE_DTYPES, strict=True)
+        ]
+        model.trees = list(zip(*columns, strict=True)) if len(arrays["tree_sizes"]) else []
+        return model

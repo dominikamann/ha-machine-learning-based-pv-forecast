@@ -274,7 +274,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             await self.hass.async_add_executor_job(self.archive.close)
 
     def _model_path(self, plant_id: str) -> Path:
-        return self.base_dir / "models" / f"{plant_id}.pkl"
+        return self.base_dir / "models" / f"{plant_id}.npz"
 
     def hour_weather(self, iso_time: str) -> dict:
         """Weather code (WMO) and temperature for one forecast hour, for display."""
@@ -362,6 +362,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         now = dt_util.utcnow()
         now_ts = int(now.timestamp())
         await self._async_refresh_weather(now)
+        assert self._weather is not None  # the refresh raises UpdateFailed when there is none
         hourly, quarter = self._weather
         if hourly.times[-1] + hourly.interval <= now_ts:
             raise UpdateFailed("weather forecast expired")
@@ -485,7 +486,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             parts.append(hourly_rows(curve, applied, times, wh))
         if not parts:
             return NEUTRAL
-        return fit_band(*(np.concatenate([p[i] for p in parts]) for i in range(4)), capacity)
+        p10, p50, p90, actual = (np.concatenate([p[i] for p in parts]) for i in range(4))
+        return fit_band(p10, p50, p90, actual, capacity)
 
     def _daily_windows(self, now: datetime) -> tuple[int, int, int, str] | None:
         local = dt_util.as_local(now)

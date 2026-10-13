@@ -34,7 +34,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry) -> dict
             "day_weight": p.day_weight,
             "day_tau": p.day_tau,
             "band": list(p.band),
-            "variant": None if p.model is None else vars(p.model).get("variant", "standard"),
+            "variant": None if p.model is None else p.model.variant,
             "variant_scores": p.variant_scores,
             "correction": p.correction is not None,
             "metrics": {h: asdict(m) for h, m in c.metrics.get(pid, {}).items()},

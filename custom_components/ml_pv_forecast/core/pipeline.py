@@ -67,7 +67,7 @@ class PlantForecast:
 
 
 def _aligned_sum(times: np.ndarray, parts: list[tuple[np.ndarray, np.ndarray]]) -> np.ndarray:
-    return sum(values[np.searchsorted(t, times)] for t, values in parts)
+    return np.sum([values[np.searchsorted(t, times)] for t, values in parts], axis=0)
 
 
 def total_forecast(forecasts: list[PlantForecast], issued_at: int) -> PlantForecast:
@@ -179,7 +179,7 @@ def forecast_plant(
     )
     if band != NEUTRAL:
         hourly, quarter = widen(hourly, band), widen(quarter, band)
-    limit = vars(model).get("limit")
+    limit = model.limit
     if limit:  # correction, nowcast and band can push values past what the plant may deliver
         hourly = np.minimum(hourly, limit)
         quarter = np.minimum(quarter, limit * QUARTER / HOUR)

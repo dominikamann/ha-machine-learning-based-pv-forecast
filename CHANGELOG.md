@@ -1,21 +1,7 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 – 2026-10-13
 
-- Forecast error sensors also check the P10–P90 band per horizon: `below_p10_pct` and
-  `above_p90_pct` (about 10 % each is right) and `score_pct` (P50 and band together).
-- Card: plant names and the card title are escaped before they go into the page, and the card
-  only uses this integration's sensors (before, any entity with the same attributes was picked up,
-  and its text could run as code in the dashboard).
-- **The correction layer is only switched on when it reliably helps.** It must now be at least
-  2 % better than the plain model and consistently so over the 14 validation days (the same test
-  as for model variants); before, any gain counted. In a test where the model was right on
-  average, the old rule switched on a correction for a quarter of the plants, and it made the
-  forecast about 15 % worse on fresh weather – it had learned the weather of individual days.
-  The correction is also fitted weighted by energy, so noisy dim hours count less.
-- Card: the forecast line and its P10–P90 range now also cover today's past hours, showing what
-  the live forecast expected for each hour shortly before it began (from the archived next-hour
-  forecasts), next to the morning forecast and the actual bars.
 - **Capped plants are no longer forecast too low.** Hours at an export or inverter limit used to
   be dropped before training, which left only the weaker hours at high irradiance: in a test with
   a plant capped at 60 % of its peak the forecast was 5 % too low in the capped hours and 2 % over
@@ -25,24 +11,39 @@
 - Fixed: a quantile model whose quantile sat exactly on many equal values (hours at a cap) never
   learned anything and stayed at that value – the P90 of a capped plant was the cap all day long.
   Such a model now starts from the mean. Other plants are unaffected (bit-identical models).
-- **Variants and promotion are judged on the whole P10–P90 band** (quantile score, an estimate of
-  the CRPS) instead of the P50 error alone. The variant scores keep their unit: % of the actual
-  energy; they equal the old values when the band has no width.
-- Training stops when Home Assistant shuts down or the integration reloads, instead of running
-  on for minutes in the background. Standard variants skip the weather inputs they do not use
-  (same models, a little faster).
-- Every plant retrains once after the update.
-
-## 0.9.0 – 2026-10-13
-
 - **Model variants**: every week four variants are trained and scored on the same last 60 days –
   Standard, Weather Plus (also humidity, dew point, rain, wind and visibility), Short term (recent
   days count more: a 90-day half-life instead of a year) and Short term Weather Plus. A plant
   switches to another variant only when it is at least 2 % better and consistently so over the
-  holdout days. New diagnostic sensor *Model variant* with every variant's score.
-- New option *Test model variants* (on by default); off trains only the standard variant.
-- After the update every plant retrains once (new inputs), and the training weather is downloaded
-  once more with the extra variables (a few minutes, cached afterwards).
+  holdout days. New diagnostic sensor *Model variant* with every variant's score; new option
+  *Test model variants* (on by default), off trains only the standard variant.
+- **Variants and promotion are judged on the whole P10–P90 band** (quantile score, an estimate of
+  the CRPS) instead of the P50 error alone. The variant scores are in % of the actual energy and
+  equal the plain P50 error when the band has no width.
+- **The correction layer is only switched on when it reliably helps.** It must now be at least
+  2 % better than the plain model and consistently so over the 14 validation days (the same test
+  as for model variants); before, any gain counted. In a test where the model was right on
+  average, the old rule switched on a correction for a quarter of the plants, and it made the
+  forecast about 15 % worse on fresh weather – it had learned the weather of individual days.
+  The correction is also fitted weighted by energy, so noisy dim hours count less.
+- Forecast error sensors also check the P10–P90 band per horizon: `below_p10_pct` and
+  `above_p90_pct` (about 10 % each is right) and `score_pct` (P50 and band together).
+- Card: the forecast line and its P10–P90 range now also cover today's past hours, showing what
+  the live forecast expected for each hour shortly before it began (from the archived next-hour
+  forecasts), next to the morning forecast and the actual bars.
+- Card: plant names and the card title are escaped before they go into the page, and the card
+  only uses this integration's sensors (before, any entity with the same attributes was picked up,
+  and its text could run as code in the dashboard).
+- Trained models are stored as plain arrays (`.npz`) instead of pickles: they load without running
+  code and survive updates of the integration. Training stops when Home Assistant shuts down or
+  the integration reloads, instead of running on for minutes in the background.
+- Backtest tool: scores each forecast lead against the physics baseline and persistence, with the
+  quantile score and the band coverage, knows the plant's limit, leaves out days the plant was
+  off and can cache the weather; the README has a new *Evaluation* section from it.
+- Backtest on two real plants over a year: as accurate as 0.8.0 (identical for the uncapped plant;
+  the 600 W cap of the other rarely binds in hourly values, so the limit fix changes little there).
+- After the update every plant retrains once, and the training weather is downloaded once more
+  with the extra variables (a few minutes, cached afterwards).
 
 ## 0.8.0 – 2026-10-13
 

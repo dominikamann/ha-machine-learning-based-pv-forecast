@@ -251,6 +251,7 @@ async def test_today_attribute_scores_the_finished_hours(recorder_mock, hass, op
     assert today["until"] == dt_util.utc_from_timestamp(start + 10 * 3600).isoformat()
 
 
+@pytest.mark.slow
 async def test_states_and_attributes_contain_no_numpy_types(recorder_mock, hass, open_meteo):
     entry = await setup_plant(hass, open_meteo)
     await hass.services.async_call("ml_pv_forecast", "retrain", {}, blocking=True)
@@ -298,6 +299,7 @@ async def test_curve_names_its_plant(recorder_mock, hass, open_meteo):
     assert plant["plant"] == "Roof" and total["plant"] is None
 
 
+@pytest.mark.slow
 @pytest.mark.all_variants
 async def test_model_variant_sensor_per_plant(recorder_mock, hass, open_meteo):
     entry = await setup_plant(hass, open_meteo, variants=True)

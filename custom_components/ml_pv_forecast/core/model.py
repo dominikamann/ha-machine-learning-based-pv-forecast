@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pickle
+import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,7 @@ MIN_UNSEEN_ROWS = 24
 HALF_LIFE_DAYS = 365
 REANALYSIS_WEIGHT = 0.3
 ACTIVE_TOLERANCE = 1.02
+FORMAT_VERSION = 1  # layout of the stored model file (see save_model)
 
 
 class NotEnoughData(Exception):
@@ -57,15 +58,14 @@ class PlantModel:
             p50 = X[:, PLANE_COLUMNS] @ self.coef
             out = np.column_stack([p50 * self.spread[0], p50, p50 * self.spread[1]])
         else:
-            seen = inputs(vars(self).get("variant", STANDARD.key), X)
+            seen = inputs(self.variant, X)
             out = (
                 np.column_stack([self.estimators[q].predict(seen) for q in QUANTILES])
                 * self.capacity
             )
         out = np.clip(out, 0.0, 1.1 * self.capacity)
-        limit = vars(self).get("limit")
-        if limit:
-            out = np.minimum(out, limit)
+        if self.limit:
+            out = np.minimum(out, self.limit)
         out.sort(axis=1)
         out[X[:, col("sun_elevation")] < 0] = 0.0
         return out
@@ -158,9 +158,8 @@ def train(
     variants = VARIANTS if variants is None else variants
     result = _train(times, X, y, now, active, limit_w, variants, should_stop)
     if result.model is not active:
-        previous = vars(active) if active is not None else {}
-        same = previous.get("variant", STANDARD.key) == result.model.variant
-        result.model.variant_since = previous.get("variant_since", 0) if same else now
+        same = active is not None and active.variant == result.model.variant
+        result.model.variant_since = active.variant_since if same and active else now
         result.model.variant_since = result.model.variant_since or now
         result.model.variant_scores = result.variant_scores
         result.model.rows = result.rows
@@ -219,7 +218,7 @@ def _train(
         candidates[v.key] = model
         day_errors[v.key] = np.bincount(day_index, error)
         scores[v.key] = round(float(error.sum() / max(yu[holdout].sum(), 1e-9) * 100), 2)
-    active_variant = vars(active_gbm).get("variant", STANDARD.key) if active_gbm else STANDARD.key
+    active_variant = active_gbm.variant if active_gbm else STANDARD.key
     variant = BY_KEY[choose(day_errors, active_variant)]
     weights = sample_weights(t, now, reanalysis, variant.half_life_days)
     candidate = candidates[variant.key]
@@ -227,6 +226,9 @@ def _train(
     candidate_score = _score(candidate, Xu[holdout], yu[holdout])
     baseline_score = _score(baseline, Xu[holdout], yu[holdout])
 
+    # The candidate is the variant that did best on these same holdout days, so its score is a
+    # little optimistic against the baseline's. A second, separate holdout would take more recent
+    # days away from training; the gap is small next to how far a GBM is usually ahead.
     promoted = candidate_score < baseline_score
     if promoted and active_gbm is not None:
         # Compare at the same data cutoff: a rival trained on exactly the data the active model
@@ -252,24 +254,48 @@ def _train(
 
 
 def is_current(model: PlantModel) -> bool:
-    """False for models trained on an older feature set (pickles from before have no field)."""
-    # vars(): an unpickled old model would otherwise see the class default (the current version).
-    return vars(model).get("feature_version", 1) == FEATURE_VERSION
+    """False for models trained on an older feature set."""
+    return model.feature_version == FEATURE_VERSION
 
 
 def save_model(model: PlantModel, path: Path) -> None:
+    """Store a model as plain arrays in an ``.npz`` file (no pickle: safe to load, and it does
+    not depend on module or class names, so refactoring cannot make stored models unreadable)."""
+    meta = {k: v for k, v in asdict(model).items() if k not in ("coef", "estimators")}
+    arrays: dict[str, np.ndarray] = {
+        "meta": np.array(json.dumps({"format": FORMAT_VERSION, **meta})),
+        "coef": np.asarray(model.coef if model.coef is not None else [], dtype=float),
+    }
+    for q, estimator in model.estimators.items():
+        arrays.update({f"q{q}_{k}": v for k, v in estimator.to_arrays().items()})
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_bytes(pickle.dumps(model))
+    with tmp.open("wb") as f:
+        np.savez_compressed(f, allow_pickle=False, **arrays)
     tmp.replace(path)
+    path.with_suffix(".pkl").unlink(missing_ok=True)  # left over from versions before 0.10
 
 
 def load_model(path: Path) -> PlantModel | None:
-    """The stored model, or None if missing or unreadable (caller retrains)."""
+    """The stored model, or None if missing, unreadable or of another format (caller retrains)."""
     if not path.exists():
         return None
     try:
-        model = pickle.loads(path.read_bytes())
-    except Exception:  # noqa: BLE001 - a corrupt pickle can raise almost anything
+        with np.load(path, allow_pickle=False) as data:
+            arrays = {k: data[k] for k in data.files}
+        meta = json.loads(str(arrays.pop("meta")))
+        if meta.pop("format", None) != FORMAT_VERSION:
+            return None
+        coef = arrays.pop("coef")
+        estimators = {}
+        for q in QUANTILES:
+            prefix = f"q{q}_"
+            part = {k[len(prefix) :]: v for k, v in arrays.items() if k.startswith(prefix)}
+            if part:
+                estimators[q] = GradientBoosting.from_arrays(part)
+        meta["spread"] = tuple(meta["spread"])
+        return PlantModel(
+            **meta, coef=coef if meta["kind"] == "fallback" else None, estimators=estimators
+        )
+    except Exception:  # noqa: BLE001 - a damaged file can fail in many ways; retrain then
         return None
-    return model if isinstance(model, PlantModel) else None

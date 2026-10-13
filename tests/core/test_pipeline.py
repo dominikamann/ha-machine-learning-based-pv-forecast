@@ -41,6 +41,7 @@ def test_window_cloud_is_mean_over_overlapping_hours():
     )
 
 
+@pytest.mark.slow
 def test_end_to_end_accuracy_on_synthetic_plant():
     days = 400
     w = synthetic_weather(START_2024, days * 24)

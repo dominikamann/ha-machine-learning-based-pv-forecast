@@ -117,15 +117,55 @@ def test_no_production_raises():
 
 def test_save_load_roundtrip_and_corrupt_file(tmp_path):
     times, X, y = data(10)
-    m = fit_fallback(X, y, float(y.max()), 0)
-    path = tmp_path / "m.pkl"
+    m = fit_fallback(X, y, float(y.max()), 0, limit=900.0)
+    path = tmp_path / "m.npz"
     save_model(m, path)
-    np.testing.assert_allclose(load_model(path).predict(X), m.predict(X))
+    loaded = load_model(path)
+    assert {k: v for k, v in vars(loaded).items() if k != "coef"} == {
+        k: v for k, v in vars(m).items() if k != "coef"
+    }
+    np.testing.assert_array_equal(loaded.coef, m.coef)
+    np.testing.assert_array_equal(loaded.predict(X), m.predict(X))
     path.write_bytes(b"garbage")
     assert load_model(path) is None
-    assert load_model(tmp_path / "missing.pkl") is None
+    assert load_model(tmp_path / "missing.npz") is None
 
 
+def test_gbm_survives_saving_bit_for_bit(tmp_path):
+    times, X, y = data(200, shade=14.0)  # shading: the GBM clearly beats the physics model
+    result = train(times, X, y, int(times[-1]) + 3600, limit_w=4000.0)
+    assert result.model.kind == "gbm"
+    save_model(result.model, tmp_path / "m.npz")
+    loaded = load_model(tmp_path / "m.npz")
+    np.testing.assert_array_equal(loaded.predict(X), result.model.predict(X))
+    assert (loaded.variant, loaded.limit, loaded.rows) == ("standard", 4000.0, result.model.rows)
+
+
+def test_files_of_another_format_or_pickles_are_not_loaded(tmp_path):
+    import pickle
+
+    from custom_components.ml_pv_forecast.core import model as model_module
+
+    times, X, y = data(10)
+    m = fit_fallback(X, y, float(y.max()), 0)
+    (tmp_path / "old.npz").write_bytes(pickle.dumps(m))  # a pickle is never unpickled
+    assert load_model(tmp_path / "old.npz") is None
+    save_model(m, tmp_path / "m.npz")
+    model_module.FORMAT_VERSION += 1
+    try:
+        assert load_model(tmp_path / "m.npz") is None
+    finally:
+        model_module.FORMAT_VERSION -= 1
+
+
+def test_saving_removes_the_pickle_of_older_versions(tmp_path):
+    times, X, y = data(10)
+    (tmp_path / "m.pkl").write_bytes(b"old")
+    save_model(fit_fallback(X, y, float(y.max()), 0), tmp_path / "m.npz")
+    assert not (tmp_path / "m.pkl").exists()
+
+
+@pytest.mark.slow
 def test_fresh_refit_replaces_older_model_after_a_change():
     # New shading started 50 days ago. The active model (trained a week ago) already knows it;
     # a weekly refit must not be rejected just because its holdout candidate predates the change.
@@ -149,16 +189,6 @@ def test_models_from_older_feature_sets_are_not_current():
     assert not is_current(m)
 
 
-def test_model_pickled_before_versioning_is_not_current(tmp_path):
-    from custom_components.ml_pv_forecast.core.model import is_current
-
-    times, X, y = data(10)
-    m = fit_fallback(X, y, float(y.max()), 0)
-    del m.__dict__["feature_version"]  # what an unpickled 0.1.x model looks like
-    save_model(m, tmp_path / "old.pkl")
-    assert not is_current(load_model(tmp_path / "old.pkl"))
-
-
 def test_model_remembers_its_training_history():
     times, X, y = data(40)
     result = train(times, X, y, int(times[-1]) + 3600)
@@ -167,6 +197,7 @@ def test_model_remembers_its_training_history():
     assert times[0] <= m.history_start < m.history_end <= times[-1]
 
 
+@pytest.mark.slow
 @pytest.mark.all_variants
 def test_every_variant_is_scored_and_the_choice_is_recorded():
     from custom_components.ml_pv_forecast.core.variants import STANDARD, VARIANTS
@@ -180,6 +211,7 @@ def test_every_variant_is_scored_and_the_choice_is_recorded():
     assert set(only.variant_scores) == {"standard"} and only.model.variant == "standard"
 
 
+@pytest.mark.slow
 @pytest.mark.all_variants
 def test_a_variant_that_sees_a_helpful_input_wins():
     from custom_components.ml_pv_forecast.core.features import col

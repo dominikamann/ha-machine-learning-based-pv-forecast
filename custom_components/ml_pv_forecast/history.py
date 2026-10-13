@@ -123,7 +123,7 @@ async def async_lowest_hourly_mean(
         {"power": UnitOfPower.WATT},
         {"mean"},
     )
-    means = [row["mean"] for row in result.get(entity_id, []) if row.get("mean") is not None]
+    means = [m for row in result.get(entity_id, []) if (m := row.get("mean")) is not None]
     return min(means) if means else None
 
 

@@ -44,10 +44,10 @@ def compute_metrics(rows: list[EvalRow]) -> Metrics | None:
     mae = float(np.mean(np.abs(error)))
     mean_actual = float(actual.mean())
     skill = None
-    with_persistence = [r for r in rows if r.persistence is not None]
+    with_persistence = [(r, r.persistence) for r in rows if r.persistence is not None]
     if with_persistence:
-        p_mae = np.mean([abs(r.persistence - r.actual) for r in with_persistence])
-        f_mae = np.mean([abs(r.forecast.p50 - r.actual) for r in with_persistence])
+        p_mae = np.mean([abs(p - r.actual) for r, p in with_persistence])
+        f_mae = np.mean([abs(r.forecast.p50 - r.actual) for r, _ in with_persistence])
         skill = float(1 - f_mae / p_mae) if p_mae > 0 else None
     return Metrics(
         mae=mae,

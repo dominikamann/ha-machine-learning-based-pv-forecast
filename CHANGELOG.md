@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3 – 2026-10-13
+
+- Card: the forecast is drawn as a line instead of a filled area, so the actual bars stand out.
+- Card: for today the forecast line starts at the current hour and uses the values corrected by
+  the current production – the ones evcc and the sensors get. Before, the chart showed the
+  uncorrected values, also for past hours, so the live correction was invisible.
+
 ## 0.6.2 – 2026-10-13
 
 - Card, Today and Review: below the hit rate, which way the morning forecast was off – ▲ too

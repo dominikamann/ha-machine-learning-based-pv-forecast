@@ -109,8 +109,24 @@ const hourlyAverage = (source, field) => `
     });
     return Object.entries(hours).map(([t, v]) => [Number(t), v.reduce((a, b) => a + b, 0) / v.length / 1000]);`;
 const GEN = {
-  hourly: (key) => `
-    return (entity.attributes.hourly || []).map(r => [new Date(r.time).getTime(), r.${key} / 1000]);`,
+  // The live forecast from the current hour on: hourly averages of the 15-minute values (they are
+  // corrected by the current production) while they last, the hourly values after that. Past
+  // hours are left out – the bars show them.
+  live: (key) => `
+    const hour = new Date(); hour.setMinutes(0, 0, 0);
+    const sums = {};
+    (entity.attributes.quarters || []).forEach(r => {
+      const t = new Date(r.time); t.setMinutes(0, 0, 0);
+      if (t >= hour) (sums[t.getTime()] ??= []).push(r.${key});
+    });
+    const quarters = Object.entries(sums)
+      .filter(([, v]) => v.length === 4)
+      .map(([t, v]) => [Number(t), v.reduce((a, b) => a + b, 0) / 4000]);
+    const last = quarters.length ? quarters[quarters.length - 1][0] : hour.getTime() - 1;
+    const hours = (entity.attributes.hourly || [])
+      .map(r => [new Date(r.time).getTime(), r.${key} / 1000])
+      .filter(([t]) => t > last);
+    return [...quarters, ...hours];`,
   morning: hourlyAverage("entity.attributes.morning", "p50"),
   actual: hourlyAverage("entity.attributes.actual", "w"),
   // Sum of the hourly P50 of several plants (apexcharts-card passes `hass` to generators).
@@ -436,6 +452,8 @@ class MlPvForecastCard extends HTMLElement {
       .legend span.plain::before { display: none; }
       .legend span.dash::before { height: 0; border-top: 2px dashed var(--c); background: none;
                                   vertical-align: middle; }
+      .legend span.line::before { height: 0; border-top: 3px solid var(--c); background: none;
+                                  vertical-align: middle; }
       .message { padding: 16px; color: var(--secondary-text-color); }
       table.plants { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
       table.plants th { color: var(--secondary-text-color); font-weight: normal; text-align: right; }
@@ -482,16 +500,17 @@ class MlPvForecastCard extends HTMLElement {
   }
 
   _legend(t) {
-    const item = (label, color, dash) =>
-      `<span class="${dash ? "dash" : ""}" style="--c:${color}">${label}</span>`;
+    // style: "dash" or "line"; a filled square otherwise
+    const item = (label, color, style) =>
+      `<span class="${style === true ? "dash" : style || ""}" style="--c:${color}">${label}</span>`;
     const items = {
       overview: [
         item(t.actual, COLORS.actual),
-        item(t.forecast, COLORS.forecast),
+        item(t.forecast, COLORS.forecast, "line"),
         item(t.range, COLORS.band, true),
         item(t.morning, COLORS.morning, true),
       ],
-      forecast: [item(t.forecast, COLORS.forecast), item(t.range, COLORS.band, true)],
+      forecast: [item(t.forecast, COLORS.forecast, "line"), item(t.range, COLORS.band, true)],
       review: [
         item(t.actual, COLORS.actual),
         item(t.morning, COLORS.morning, true),
@@ -732,7 +751,11 @@ class MlPvForecastCard extends HTMLElement {
       return [this._timelineSpec(entity, state, t)];
     }
     // Overview: one chart per day, each covering only the hours with sun, sharing one kW scale.
-    const hourly = (a.hourly || []).map((r) => [new Date(r.time).getTime(), r.p90 / 1000]);
+    // the corrected 15-minute values can lie above the hourly ones, so both set the scale
+    const hourly = [...(a.hourly || []), ...(a.quarters || [])].map((r) => [
+      new Date(r.time).getTime(),
+      r.p90 / 1000,
+    ]);
     const actual = (a.actual || []).map((r) => [new Date(r.time).getTime(), r.w / 1000]);
     // Today alone gets its own kW scale; the other views share one scale across the days.
     const scaled = this._view === "today" ? hourly.filter(([t]) => t < localMidnight(1)) : hourly;
@@ -760,11 +783,10 @@ class MlPvForecastCard extends HTMLElement {
       const dayStart = localMidnight(i);
       const [from, to] = sunWindow(dayStart, i === 0 ? [...hourly, ...actual] : hourly);
       const series = [
-        this._series(entity, t.forecast, COLORS.forecast, GEN.hourly("p50"), {
-          type: "area",
-          opacity: 0.3,
+        this._series(entity, t.forecast, COLORS.forecast, GEN.live("p50"), {
+          stroke_width: 2.5,
         }),
-        ...this._band(entity, t, GEN.hourly("p10"), GEN.hourly("p90")),
+        ...this._band(entity, t, GEN.live("p10"), GEN.live("p90")),
       ];
       if (i === 0) {
         series.unshift(
@@ -840,7 +862,7 @@ MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
     entity,
     start: localMidnight(),
     hours: this._config.days * 24,
-    max: this._maxKw((a.hourly || []).map((r) => r.p90 / 1000)),
+    max: this._maxKw([...(a.hourly || []), ...(a.quarters || [])].map((r) => r.p90 / 1000)),
     yAxis: true,
     now: true,
     height: 260,
@@ -850,11 +872,10 @@ MlPvForecastCard.prototype._timelineSpec = function (entity, state, t) {
         stroke_width: 0,
         opacity: 0.85,
       }),
-      this._series(entity, t.forecast, COLORS.forecast, GEN.hourly("p50"), {
-        type: "area",
-        opacity: 0.3,
+      this._series(entity, t.forecast, COLORS.forecast, GEN.live("p50"), {
+        stroke_width: 2.5,
       }),
-      ...this._band(entity, t, GEN.hourly("p10"), GEN.hourly("p90")),
+      ...this._band(entity, t, GEN.live("p10"), GEN.live("p90")),
       this._series(entity, t.morning, COLORS.morning, GEN.morning, { stroke_dash: 6 }),
     ],
   });

@@ -11,7 +11,7 @@ from custom_components.ml_pv_forecast.core.weather import OpenMeteoError
 from .conftest import setup_plant
 
 
-async def fail():
+async def fail(**_):
     raise OpenMeteoError("down")
 
 
@@ -30,6 +30,16 @@ async def test_open_meteo_down_at_startup_retries(recorder_mock, hass, open_mete
     open_meteo.forecast.side_effect = fail
     entry = await setup_plant(hass, open_meteo)
     assert entry.state is ConfigEntryState.SETUP_RETRY
+    # Home Assistant's start waits for this first forecast: it must not wait for Open-Meteo
+    assert open_meteo.forecast.call_args.kwargs == {"patient": False}
+
+
+async def test_later_forecasts_wait_for_open_meteo(recorder_mock, hass, open_meteo):
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    coordinator.weather_fetched_at -= timedelta(hours=2)
+    await coordinator.async_refresh()
+    assert open_meteo.forecast.call_args.kwargs == {"patient": True}
 
 
 async def test_open_meteo_down_later_keeps_forecast_and_raises_issue(
@@ -63,9 +73,9 @@ async def test_plant_added_during_setup_is_picked_up(recorder_mock, hass, open_m
     release = asyncio.Event()
     weather = open_meteo.forecast.side_effect
 
-    async def slow_forecast():
+    async def slow_forecast(**kwargs):
         await release.wait()
-        return await weather()
+        return await weather(**kwargs)
 
     open_meteo.forecast.side_effect = slow_forecast
     hass.states.async_set(

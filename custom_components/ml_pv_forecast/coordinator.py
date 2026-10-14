@@ -345,7 +345,9 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         ):
             return
         try:
-            self._weather = await self.client.forecast()
+            # Without any forecast yet (startup) Home Assistant waits for this one: give up at
+            # once on errors, the setup is then retried in the background.
+            self._weather = await self.client.forecast(patient=self._weather is not None)
         except OpenMeteoError as err:
             self._weather_failing_since = self._weather_failing_since or now
             if now - self._weather_failing_since >= WEATHER_REPAIR_AFTER:

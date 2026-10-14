@@ -268,3 +268,27 @@ def test_humidity_wind_precipitation_and_visibility_are_parsed():
     assert (w.wind_speed[0], w.visibility[0]) == (12.0, 180.0)
     old = parse_block({"hourly": block([7200])}, "hourly", HOUR, False)
     assert np.isnan(old.humidity).all() and np.isnan(old.visibility).all()
+
+
+async def test_impatient_forecast_gives_up_at_once(monkeypatch):
+    # At startup Home Assistant waits for the first forecast: an overloaded Open-Meteo must not
+    # hold the whole start for minutes. The setup is retried in the background instead.
+    from custom_components.ml_pv_forecast.core import weather as weather_module
+
+    waits, timeouts = [], []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
+    session = FakeSession(lambda url, params: (503, "<html>Service Unavailable</html>"))
+    original = session.get
+
+    def get(url, params=None, timeout=None):
+        timeouts.append(timeout.total)
+        return original(url, params, timeout)
+
+    session.get = get
+    with pytest.raises(OpenMeteoError, match="HTTP 503"):
+        await OpenMeteoClient(session, 50.0, 10.0).forecast(patient=False)
+    assert waits == [] and len(session.calls) == 1 and timeouts == [20]

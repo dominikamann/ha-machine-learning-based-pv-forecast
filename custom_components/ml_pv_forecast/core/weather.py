@@ -28,6 +28,8 @@ LEADS = (0, 1, 2)
 CACHE_VERSION = 3
 RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_WAIT = 61  # seconds; Open-Meteo's limit window is one minute
+TIMEOUT = 60  # seconds per request
+IMPATIENT_TIMEOUT = 20  # at startup Home Assistant waits for the first forecast
 
 VARIABLES = {
     "shortwave_radiation": "ghi",
@@ -215,21 +217,26 @@ class OpenMeteoClient:
             **extra,
         }
 
-    async def _get(self, url: str, params: dict[str, str]) -> dict[str, Any]:
-        """GET with retries when Open-Meteo's per-minute limit is hit (large history downloads)."""
-        for attempt in range(RATE_LIMIT_RETRIES + 1):
+    async def _get(self, url: str, params: dict[str, str], patient: bool = True) -> dict[str, Any]:
+        """GET with retries when Open-Meteo's per-minute limit is hit (large history downloads).
+
+        Not ``patient``: one short try, for callers that others wait on.
+        """
+        retries = RATE_LIMIT_RETRIES if patient else 0
+        timeout = TIMEOUT if patient else IMPATIENT_TIMEOUT
+        for attempt in range(retries + 1):
             try:
-                return await self._get_once(url, params)
+                return await self._get_once(url, params, timeout)
             except _Retry as err:
-                if attempt == RATE_LIMIT_RETRIES:
+                if attempt == retries:
                     raise OpenMeteoError(str(err)) from err
                 await asyncio.sleep(RATE_LIMIT_WAIT)
         raise AssertionError("unreachable")
 
-    async def _get_once(self, url: str, params: dict[str, str]) -> dict[str, Any]:
+    async def _get_once(self, url: str, params: dict[str, str], timeout: int) -> dict[str, Any]:
         try:
             async with self._session.get(
-                url, params=params, timeout=aiohttp.ClientTimeout(total=60)
+                url, params=params, timeout=aiohttp.ClientTimeout(total=timeout)
             ) as resp:
                 try:
                     payload = await resp.json(content_type=None)
@@ -247,8 +254,11 @@ class OpenMeteoClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise OpenMeteoError(f"{url}: {err}") from err
 
-    async def forecast(self) -> tuple[WeatherData, WeatherData]:
-        """Hourly (all models) and 15-minute forecast from yesterday to three days ahead."""
+    async def forecast(self, patient: bool = True) -> tuple[WeatherData, WeatherData]:
+        """Hourly (all models) and 15-minute forecast from yesterday to three days ahead.
+
+        Not ``patient``: give up at the first error instead of waiting for Open-Meteo.
+        """
         hourly = await self._get(
             FORECAST_URL,
             self._params(
@@ -257,10 +267,12 @@ class OpenMeteoClient:
                 past_days="1",
                 forecast_days="4",
             ),
+            patient,
         )
         quarter = await self._get(
             FORECAST_URL,
             self._params(minutely_15=",".join(QUARTER_VARIABLES), past_days="1", forecast_days="4"),
+            patient,
         )
         return (
             parse_block(hourly, "hourly", HOUR, False, suffix=""),

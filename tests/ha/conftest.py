@@ -78,7 +78,7 @@ async def open_meteo(hass):
     quarter = synthetic_weather(future_start, 5 * 96, interval=900, seed=3)
     with patch(CLIENT) as client_cls:
         client = client_cls.return_value
-        client.forecast.side_effect = lambda: _value((hourly, quarter))
+        client.forecast.side_effect = lambda **_: _value((hourly, quarter))
         client.history.side_effect = lambda *args, **kwargs: _value(history)
         leads = [history, replace(history, lead_days=np.ones(len(history)))]
         client.history_leads.side_effect = lambda *args, **kwargs: _value(leads)

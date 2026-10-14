@@ -280,7 +280,7 @@ async def test_hourly_curve_carries_weather_code_and_temperature(recorder_mock, 
 
     hourly, quarter = await open_meteo.forecast.side_effect()
     coded = replace(hourly, weather_code=np.full(len(hourly), 3.0))
-    open_meteo.forecast.side_effect = lambda: _value((coded, quarter))
+    open_meteo.forecast.side_effect = lambda **_: _value((coded, quarter))
     entry = await setup_plant(hass, open_meteo)
     row = hass.states.get(_entity(hass, entry, "total_curve")).attributes["hourly"][12]
     assert row["wc"] == 3

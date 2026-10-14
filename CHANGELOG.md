@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.3 – 2026-10-14
 
 - Home Assistant no longer waits minutes for an overloaded Open-Meteo at startup. The first
   weather download gives up at the first error (20 s timeout) and the integration's setup is

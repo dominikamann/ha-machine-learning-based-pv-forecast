@@ -21,6 +21,7 @@ async def async_get_solar_forecast(
     return {
         "wh_hours": {
             dt_util.utc_from_timestamp(int(t)).isoformat(): round(float(v), 1)
-            for t, v in zip(forecast.hour_times, forecast.hourly[:, 1], strict=True)
+            # the same live-corrected values as the sensors and evcc
+            for t, v in zip(forecast.hour_times, forecast.hourly_p50(), strict=True)
         }
     }

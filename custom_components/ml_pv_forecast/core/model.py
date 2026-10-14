@@ -273,7 +273,7 @@ def save_model(model: PlantModel, path: Path) -> None:
     with tmp.open("wb") as f:
         np.savez_compressed(f, allow_pickle=False, **arrays)
     tmp.replace(path)
-    path.with_suffix(".pkl").unlink(missing_ok=True)  # left over from versions before 0.10
+    path.with_suffix(".pkl").unlink(missing_ok=True)  # left over from versions before 0.9.0
 
 
 def load_model(path: Path) -> PlantModel | None:

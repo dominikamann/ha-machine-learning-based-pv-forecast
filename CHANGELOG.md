@@ -12,6 +12,19 @@
   first producing hour. The hit rate, its direction and the hours in range now wait for two
   finished producing hours and 10 % of the day's energy (forecast or actual); until then they read
   "too early to judge". New attribute `too_early` in `today`.
+- Fixed: a plant whose source sensor was missing (e.g. its integration still starting) dropped
+  out of the forecast until it was back – the total, evcc and the Energy dashboard then showed
+  only the other plants, and a morning forecast frozen at that moment lacked the plant for the
+  whole day. The plant is now forecast on without the live correction; the total's actual
+  production waits for every plant.
+- The band calibration also waits for two weeks of morning forecasts (was about a week of hours).
+- The Energy dashboard shows the same live-corrected forecast as the sensors and evcc (the
+  hours covered by the 15-minute forecast are summed from it).
+- The plant setup rejects a sensor that already belongs to another plant (the total would count
+  it twice), a name another plant already has, and the name "Total".
+- The last hour of the 15-minute forecast is no longer too high when the data ends within it.
+- The card renders only when one of its forecast sensors changes, not on every state change in
+  Home Assistant.
 - README links are absolute, so HACS shows the license badge.
 
 ## 0.9.1 – 2026-10-13

@@ -1,7 +1,13 @@
 import numpy as np
 import pytest
 
-from custom_components.ml_pv_forecast.core.band import NEUTRAL, fit_band, hourly_rows, widen
+from custom_components.ml_pv_forecast.core.band import (
+    NEUTRAL,
+    fit_band,
+    fit_days,
+    hourly_rows,
+    widen,
+)
 
 
 def test_widen_scales_each_half_of_the_band_around_p50():
@@ -48,3 +54,19 @@ def test_hourly_rows_undo_the_band_scale_that_was_applied():
     assert p50[0] == 400.0 and actual[0] == 360.0
     assert p10[0] == pytest.approx(400 - 200 / 2.0)  # back to the uncalibrated band
     assert p90[0] == pytest.approx(400 + 200 / 1.5)
+
+
+def test_fit_days_needs_two_weeks_of_morning_forecasts():
+    # A week of hours is enough for fit_band, but those few days often come from an older model
+    # version: the band is only learned from 14 days on.
+    rng = np.random.default_rng(2)
+
+    def day():
+        p50 = rng.uniform(200, 1000, 10)
+        return p50 * 0.9, p50, p50 * 1.1, p50 * (1 + rng.normal(0, 0.2, 10))
+
+    assert fit_days([day() for _ in range(13)], 1000.0) == NEUTRAL
+    lo, hi = fit_days([day() for _ in range(20)], 1000.0)
+    assert lo > 1.3 and hi > 1.3  # the too narrow band is widened
+    empty = (np.array([]),) * 4
+    assert fit_days([day() for _ in range(13)] + [empty] * 5, 1000.0) == NEUTRAL

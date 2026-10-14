@@ -38,6 +38,7 @@ from .const import (
     MEASUREMENT_ENERGY,
     MEASUREMENT_POWER,
     SUBENTRY_PLANT,
+    TOTAL,
 )
 from .history import EntityProblem, async_lowest_hourly_mean, entity_kind, validate_entities
 
@@ -136,10 +137,7 @@ class PlantSubentryFlow(ConfigSubentryFlow):
         self._data: dict[str, Any] = {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        if user_input is not None:
-            self._data.update(user_input)
-            return await self.async_step_sensors()
-        return self.async_show_form(step_id="user", data_schema=_plant_schema(self._data))
+        return await self._name_step("user", user_input)
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
@@ -147,10 +145,37 @@ class PlantSubentryFlow(ConfigSubentryFlow):
         if not self._data:
             self._data = dict(self._get_reconfigure_subentry().data)
             self._data.setdefault(CONF_MEASUREMENT, _measurement_of(self.hass, self._data))
+        return await self._name_step("reconfigure", user_input)
+
+    async def _name_step(
+        self, step_id: str, user_input: dict[str, Any] | None
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._data.update(user_input)
-            return await self.async_step_sensors()
-        return self.async_show_form(step_id="reconfigure", data_schema=_plant_schema(self._data))
+            name = user_input[CONF_NAME].strip().casefold()
+            if name == TOTAL:
+                errors[CONF_NAME] = "reserved_name"  # the sum of all plants is called Total
+            elif any(p.title.strip().casefold() == name for p in self._other_plants()):
+                errors[CONF_NAME] = "name_in_use"
+            else:
+                self._data.update(user_input)
+                return await self.async_step_sensors()
+        return self.async_show_form(
+            step_id=step_id, data_schema=_plant_schema(user_input or self._data), errors=errors
+        )
+
+    def _other_plants(self) -> list:
+        """The entry's other plants (all of them when adding one)."""
+        own = (
+            self._get_reconfigure_subentry().subentry_id
+            if self.source == SOURCE_RECONFIGURE
+            else None
+        )
+        return [
+            p
+            for p in self._get_entry().subentries.values()
+            if p.subentry_type == SUBENTRY_PLANT and p.subentry_id != own
+        ]
 
     async def async_step_sensors(
         self, user_input: dict[str, Any] | None = None
@@ -163,6 +188,9 @@ class PlantSubentryFlow(ConfigSubentryFlow):
                 entity_kind(self.hass, e) != measurement for e in user_input[CONF_ENTITIES]
             ):
                 error = "wrong_kind"
+            used = {e for p in self._other_plants() for e in p.data.get(CONF_ENTITIES, [])}
+            if error is None and used & set(user_input[CONF_ENTITIES]):
+                error = "entity_in_use"  # the total would count it twice
             if error is None:
                 self._data[CONF_ENTITIES] = user_input[CONF_ENTITIES]
                 self._data.pop(CONF_LIMIT_W, None)

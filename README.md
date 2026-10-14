@@ -46,7 +46,7 @@ datasheet says it should do.
   models disagree, the P10–P90 band widens.
 - **Honest P10–P90 band**: every night each plant checks its morning forecasts of the last 60 days –
   should about a tenth of the hours fall below P10 and a tenth above P90 – and widens or narrows
-  each half of the band by half of what was off (after about a week of data).
+  each half of the band by half of what was off (after two weeks of data).
 - **Trained per lead time**: every past hour is learned three times – with the forecast from the
   same day, from the day before and from two days before (Open-Meteo's archive of previous model
   runs, from 2024). Tomorrow's forecast is therefore trained on what forecasts for tomorrow really

@@ -76,7 +76,10 @@
         "missing": "Sensor not found.",
         "unsupported_unit": "The sensor must measure power (W, kW) or energy (Wh, kWh).",
         "no_statistics": "The sensor has no long-term statistics (state_class is missing).",
-        "wrong_kind": "The sensor does not match the chosen measurement (power or energy)."
+        "wrong_kind": "The sensor does not match the chosen measurement (power or energy).",
+        "reserved_name": "\"Total\" is the name of the sum of all plants. Choose another name.",
+        "name_in_use": "Another plant already has this name.",
+        "entity_in_use": "A selected sensor already belongs to another plant; the total would count it twice."
       },
       "abort": {
         "reconfigure_successful": "Plant updated."

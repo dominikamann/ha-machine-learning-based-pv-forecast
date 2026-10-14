@@ -292,8 +292,30 @@ class MlPvForecastCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const previous = this._hass;
     this._hass = hass;
-    this._render();
+    // Home Assistant hands over a new hass object on every state change anywhere; render only
+    // when one of this integration's curve sensors, the language or the entity registry changed.
+    if (!previous || previous.entities !== hass.entities) this._curves = undefined;
+    const ids = this._curveIds();
+    const changed =
+      !previous ||
+      previous.locale !== hass.locale ||
+      ids.join() !== this._renderedIds ||
+      ids.some((id) => previous.states[id] !== hass.states[id]);
+    this._renderedIds = ids.join();
+    if (changed) this._render();
+  }
+
+  // Entity ids of this integration's curve sensors (and the configured entity), found once.
+  _curveIds() {
+    if (!this._curves?.length || this._curves.some((id) => !this._hass.states[id])) {
+      this._curves = Object.values(this._hass.states)
+        .filter((s) => isForecastCurve(s, this._hass))
+        .map((s) => s.entity_id);
+    }
+    const own = this._config?.entity;
+    return own && !this._curves.includes(own) ? [...this._curves, own] : this._curves;
   }
 
   getCardSize() {
@@ -315,9 +337,8 @@ class MlPvForecastCard extends HTMLElement {
 
   _entityId() {
     if (this._config.entity) return this._config.entity;
-    const states = Object.values(this._hass.states).filter((s) => isForecastCurve(s, this._hass));
-    const total = states.find((s) => s.entity_id.includes("_total_"));
-    return (total || states[0])?.entity_id;
+    const ids = this._curveIds();
+    return ids.find((id) => id.includes("_total_")) ?? ids[0];
   }
 
   _kwh(value) {
@@ -939,7 +960,8 @@ MlPvForecastCard.prototype._dayName = function (offset, t) {
 };
 
 MlPvForecastCard.prototype._plantStates = function () {
-  return Object.values(this._hass.states)
+  return this._curveIds()
+    .map((id) => this._hass.states[id])
     .filter((s) => isForecastCurve(s, this._hass) && s.attributes.plant)
     .sort((a, b) => a.attributes.plant.localeCompare(b.attributes.plant));
 };

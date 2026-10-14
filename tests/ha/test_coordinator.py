@@ -104,6 +104,9 @@ async def test_briefly_missing_sensor_raises_no_repair(recorder_mock, hass, open
     hass.states.async_remove("sensor.pv")  # e.g. its integration is still starting
     await coordinator.async_refresh()
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+    # the forecast goes on without the live correction; the total must not lose the plant
+    assert plant.plant_id in coordinator.data and coordinator.data[plant.plant_id].ratio is None
+    assert "total" in coordinator.data
     hass.states.async_set("sensor.pv", "0", attributes)
     await coordinator.async_refresh()
     assert plant.status in ("ready", "learning") and plant.plant_id in coordinator.data

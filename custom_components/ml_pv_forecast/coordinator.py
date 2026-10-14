@@ -23,7 +23,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_ENTITIES, CONF_LIMIT_W, CONF_VARIANTS, DOMAIN, SUBENTRY_PLANT, TOTAL
 from .core.archive import Archive, ArchivedForecast
-from .core.band import NEUTRAL, fit_band, hourly_rows
+from .core.band import NEUTRAL, fit_days, hourly_rows
 from .core.band import WINDOW_DAYS as BAND_WINDOW_DAYS
 from .core.evaluation import (
     Correction,
@@ -377,20 +377,23 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 if retry_due and not plant.lock.locked() and self._entities_usable(plant):
                     self._start_training(plant)
                 continue
+            ratio = None
             try:
                 times, wh = await async_production(
                     self.hass, plant.entity_ids, now - timedelta(hours=2), now, "5minute"
                 )
             except EntityProblem as err:
+                # Model and weather are there: keep forecasting, only without the live correction,
+                # so the total, evcc and the morning forecast do not silently lose this plant.
                 self._entity_problem(plant, err)
-                continue
-            plant.problem_since = None
-            if plant.error and "training" not in plant.error:
-                plant.status = "ready" if plant.model.kind == "gbm" else "learning"
-                plant.error = None
-            self._clear_issue(f"entity_{plant.plant_id}")
-            actuals[plant.plant_id] = quarter_sums(times, wh)
-            ratio = self._live_ratio(plant, *actuals[plant.plant_id])
+            else:
+                plant.problem_since = None
+                if plant.error and "training" not in plant.error:
+                    plant.status = "ready" if plant.model.kind == "gbm" else "learning"
+                    plant.error = None
+                self._clear_issue(f"entity_{plant.plant_id}")
+                actuals[plant.plant_id] = quarter_sums(times, wh)
+                ratio = self._live_ratio(plant, *actuals[plant.plant_id])
             forecasts[plant.plant_id] = await self.hass.async_add_executor_job(
                 forecast_plant,
                 plant.plant_id,
@@ -409,7 +412,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         if not forecasts:
             return {}
         forecasts[TOTAL] = total_forecast(list(forecasts.values()), now_ts)
-        actuals[TOTAL] = _sum_actuals(list(actuals.values()))
+        if len(actuals) == len(forecasts) - 1:  # the total's actuals need every plant's
+            actuals[TOTAL] = _sum_actuals(list(actuals.values()))
         daily = self._daily_windows(now)
         self._freeze_morning = should_freeze(dt_util.as_local(now), self._morning_day)
         await self.hass.async_add_executor_job(
@@ -484,10 +488,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
                 continue
             times, wh = self.archive.actuals(key, int(curve[0][0]), int(curve[-1][0]) + 900)
             parts.append(hourly_rows(curve, applied, times, wh))
-        if not parts:
-            return NEUTRAL
-        p10, p50, p90, actual = (np.concatenate([p[i] for p in parts]) for i in range(4))
-        return fit_band(p10, p50, p90, actual, capacity)
+        return fit_days(parts, capacity)
 
     def _daily_windows(self, now: datetime) -> tuple[int, int, int, str] | None:
         local = dt_util.as_local(now)

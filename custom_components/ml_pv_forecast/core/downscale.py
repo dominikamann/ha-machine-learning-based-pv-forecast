@@ -26,11 +26,15 @@ def to_quarters(
     np.add.at(sums, pos_c[valid], weight[valid])
     np.add.at(counts, pos_c[valid], 1)
     hour_sum = sums[pos_c]
+    count = np.maximum(counts[pos_c], 1)
     share = np.where(
         hour_sum > 0,
         weight / np.where(hour_sum > 0, hour_sum, 1.0),
-        1.0 / np.maximum(counts[pos_c], 1),
+        1.0 / count,
     )
+    # An hour cut off at the edge of the 15-minute data keeps only its quarters' part of the hour
+    # (as if the missing quarters had the same sun) instead of piling the whole hour onto them.
+    share = share * np.minimum(count, 4) / 4
     out = hourly[pos_c] * share[:, None]
     out[~valid] = np.nan
     return out

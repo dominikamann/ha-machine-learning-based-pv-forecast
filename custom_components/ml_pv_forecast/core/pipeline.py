@@ -57,6 +57,23 @@ class PlantForecast:
         values = self.quarter_raw if self.quarter_model is None else self.quarter_model
         return _integrate(self.quarter_times, values, QUARTER, start, end)
 
+    def hourly_p50(self) -> np.ndarray:
+        """P50 per hour of ``hour_times``: the sum of the (live-corrected) quarters where all four
+        exist, the hourly value elsewhere."""
+        out = self.hourly[:, 1].copy()
+        hour = self.quarter_times - self.quarter_times % HOUR
+        index = np.searchsorted(self.hour_times, hour)
+        inside = (index < len(self.hour_times)) & (
+            self.hour_times[np.minimum(index, len(self.hour_times) - 1)] == hour
+        )
+        sums = np.zeros(len(self.hour_times))
+        counts = np.zeros(len(self.hour_times))
+        np.add.at(sums, index[inside], self.quarter[inside, 1])
+        np.add.at(counts, index[inside], 1)
+        full = counts == HOUR // QUARTER
+        out[full] = sums[full]
+        return out
+
     def peak(self, start: int, end: int) -> tuple[float, int] | None:
         mask = (self.quarter_times >= start) & (self.quarter_times < end)
         if not mask.any():
@@ -71,6 +88,8 @@ def _aligned_sum(times: np.ndarray, parts: list[tuple[np.ndarray, np.ndarray]]) 
 
 
 def total_forecast(forecasts: list[PlantForecast], issued_at: int) -> PlantForecast:
+    """Sum of the plants. P10 and P90 are summed as well, which is exact when the plants miss
+    together – the usual case under one sky – and too wide only for plants far apart."""
     hour_times = reduce(np.intersect1d, [f.hour_times for f in forecasts])
     quarter_times = reduce(np.intersect1d, [f.quarter_times for f in forecasts])
     return PlantForecast(

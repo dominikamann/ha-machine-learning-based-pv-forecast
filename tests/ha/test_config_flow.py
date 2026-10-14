@@ -111,3 +111,45 @@ async def test_options_flow_toggles_evcc(hass):
         result["flow_id"], {CONF_EVCC: False, CONF_VARIANTS: False}
     )
     assert entry.options == {CONF_EVCC: False, CONF_VARIANTS: False}
+
+
+async def test_plant_flow_rejects_names_and_sensors_already_used(hass):
+    from homeassistant.config_entries import ConfigSubentryData
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        options={CONF_EVCC: True},
+        subentries_data=[
+            ConfigSubentryData(
+                data={"name": "Roof", CONF_ENTITIES: ["sensor.pv"]},
+                subentry_type="plant",
+                title="Roof",
+                unique_id=None,
+            )
+        ],
+    )
+    entry.add_to_hass(hass)
+    for entity_id in ("sensor.pv", "sensor.garage"):
+        hass.states.async_set(
+            entity_id, "0", {"unit_of_measurement": "W", "state_class": "measurement"}
+        )
+    # "Total" is the name of the sum of all plants, and two plants must not share a name
+    result = await _start_plant(hass, entry, name="Total")
+    assert result["step_id"] == "user" and result["errors"] == {"name": "reserved_name"}
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"name": "roof", "measurement": "power"}
+    )
+    assert result["errors"] == {"name": "name_in_use"}
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"name": "Garage", "measurement": "power"}
+    )
+    # a sensor that already belongs to another plant would be counted twice in the total
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ENTITIES: ["sensor.pv"]}
+    )
+    assert result["errors"] == {CONF_ENTITIES: "entity_in_use"}
+    with patch(SETUP, return_value=True, create=True):
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {CONF_ENTITIES: ["sensor.garage"]}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY

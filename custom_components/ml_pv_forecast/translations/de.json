@@ -76,7 +76,10 @@
         "missing": "Sensor nicht gefunden.",
         "unsupported_unit": "Der Sensor muss Leistung (W, kW) oder Energie (Wh, kWh) messen.",
         "no_statistics": "Der Sensor hat keine Langzeitstatistik (state_class fehlt).",
-        "wrong_kind": "Der Sensor passt nicht zur gewählten Messart (Leistung oder Energie)."
+        "wrong_kind": "Der Sensor passt nicht zur gewählten Messart (Leistung oder Energie).",
+        "reserved_name": "„Total“ ist der Name der Summe aller Anlagen. Bitte einen anderen Namen wählen.",
+        "name_in_use": "Eine andere Anlage hat bereits diesen Namen.",
+        "entity_in_use": "Ein gewählter Sensor gehört schon zu einer anderen Anlage; die Summe würde ihn doppelt zählen."
       },
       "abort": {
         "reconfigure_successful": "Anlage aktualisiert."

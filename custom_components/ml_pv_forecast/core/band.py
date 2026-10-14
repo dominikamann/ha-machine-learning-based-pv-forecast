@@ -14,6 +14,8 @@ GRID = np.round(np.arange(0.5, 3.0001, 0.05), 2)
 SHRINK = 0.5
 WINDOW_DAYS = 60
 MIN_HOURS = 70  # about a week of daylight hours
+# Days with measured hours; fewer often come from an older model version and mislead the band.
+MIN_DAYS = 14
 
 
 def widen(values: np.ndarray, scale: tuple[float, float]) -> np.ndarray:
@@ -70,3 +72,14 @@ def fit_band(
         return round(float(1 + SHRINK * (k - 1)), 3)
 
     return needed(below, low_gap), needed(above, high_gap)
+
+
+def fit_days(
+    days: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]], capacity_wh: float
+) -> tuple[float, float]:
+    """``fit_band`` over the hourly rows of several days, once enough days were measured."""
+    days = [d for d in days if len(d[0])]
+    if len(days) < MIN_DAYS:
+        return NEUTRAL
+    p10, p50, p90, actual = (np.concatenate([d[i] for d in days]) for i in range(4))
+    return fit_band(p10, p50, p90, actual, capacity_wh)

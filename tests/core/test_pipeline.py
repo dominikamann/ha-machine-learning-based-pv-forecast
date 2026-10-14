@@ -156,3 +156,12 @@ def test_band_scale_widens_hourly_and_quarter_bands_but_not_p50():
     up = plain.quarter[:, 2] - plain.quarter[:, 1]
     np.testing.assert_allclose(wide.quarter[:, 2] - wide.quarter[:, 1], 2.0 * up, atol=1e-6)
     assert (wide.hourly[:, 2] >= plain.hourly[:, 2]).all()
+
+
+def test_hourly_p50_follows_the_corrected_quarters_where_they_cover_the_hour():
+    # The live correction only changes the quarters; the Energy dashboard shows hours, so they are
+    # built from the quarters wherever all four exist and from the hourly values beyond.
+    qt = np.arange(0, 6300, 900)  # 7 quarters: hour 0 complete, hour 1 only three quarters
+    q = np.full((7, 3), 50.0)  # corrected down from 100 per quarter
+    f = PlantForecast("a", 0, np.array([0, 3600, 7200]), np.full((3, 3), 400.0), qt, q, q.copy())
+    assert f.hourly_p50().tolist() == [200.0, 400.0, 400.0]

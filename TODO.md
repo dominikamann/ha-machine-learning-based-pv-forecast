@@ -42,9 +42,12 @@ Baseline before the update (archive of 2026-10-11 to 2026-10-13, only 2–3 days
       the highest bin (scikit-learn learns the direction). Only matters for plants running a
       Weather Plus variant: if their day-ahead error is clearly worse than same-day, hide
       visibility for lead ≥ 1 when forecasting, or let the GBM learn the missing direction.
-- [ ] **Band of the total.** The total's P10/P90 is the sum of the plants' P10/P90 (assumes all
-      plants miss together). Compare the total's `below_p10_pct` / `above_p90_pct` with the
-      plants'.
+- [ ] **Band of the total and of whole days.** The total's P10/P90 is the sum of the plants'
+      P10/P90, and a day's P10/P90 the sum of its quarters' (both assume everything misses
+      together, which is close under one sky but too wide when errors partly cancel). Compare
+      `below_p10_pct` / `above_p90_pct` of the total with the plants', and of *today (morning
+      forecast)* / *day ahead* with the hourly horizons. Clearly below 10 % on both sides → narrow
+      the summed band with a factor learned from the archive, like the band calibration.
 
 ## Later
 

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -325,12 +325,14 @@ async def test_model_variant_sensor_per_plant(recorder_mock, hass, open_meteo):
 
 
 async def test_curve_shows_the_forecast_issued_before_each_past_hour(
-    recorder_mock, hass, open_meteo
+    recorder_mock, hass, freezer, open_meteo
 ):
     from homeassistant.util import dt as dt_util
 
     from custom_components.ml_pv_forecast.core.archive import ArchivedForecast
 
+    # in the afternoon, so 08:00 and 09:00 are past hours whatever time the test runs
+    freezer.move_to(dt_util.start_of_local_day() + timedelta(hours=14))
     entry = await setup_plant(hass, open_meteo)
     coordinator = entry.runtime_data
     midnight = int(dt_util.start_of_local_day().timestamp())

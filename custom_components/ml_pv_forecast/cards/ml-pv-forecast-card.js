@@ -40,6 +40,7 @@ const TEXT = {
     produced: "Produced so far",
     expected: "Expected today",
     until: "until",
+    tooEarly: "too early to judge",
     pessimistic: "too pessimistic",
     optimistic: "too optimistic",
     onTarget: "on target",
@@ -70,6 +71,7 @@ const TEXT = {
     produced: "Bisher erzeugt",
     expected: "Erwartet heute",
     until: "bis",
+    tooEarly: "noch zu früh",
     pessimistic: "zu pessimistisch",
     optimistic: "zu optimistisch",
     onTarget: "passt",
@@ -624,7 +626,12 @@ class MlPvForecastCard extends HTMLElement {
       ? a.morning.reduce((sum, r) => sum + r.p50, 0) / 4 / 1000
       : undefined;
     const pct = (v) => (v === null || v === undefined ? "–" : `${Math.round(v)} %`);
-    const until = today.until ? `${t.until} ${this._time(today.until)}` : undefined;
+    // The hit rate waits for a few finished hours; one hazy morning hour says little.
+    const until = today.too_early
+      ? t.tooEarly
+      : today.until
+        ? `${t.until} ${this._time(today.until)}`
+        : undefined;
     const direction = this._direction(today.deviation_pct, t);
     return `<div class="stats">${[
       this._stat(t.produced, this._kwh(produced)),

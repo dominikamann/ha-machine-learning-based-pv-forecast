@@ -183,7 +183,8 @@ tariffs:
 The forecast is recalculated every 15 minutes, and the next hours follow the live production (if
 the plant is producing 20 % less than forecast right now, the next half hour is corrected and the
 correction fades over the following hours; if the day so far has been 15 % above the forecast, the
-next hours are lifted a little as well). `interval: 15m` makes evcc pick these updates up.
+next hours are lifted a little as well). How fast the correction fades is learned per plant once
+two weeks of forecasts are archived (at most three hours; one hour until then). `interval: 15m` makes evcc pick these updates up.
 
 Optional query parameters: `?plant=<plant id>` for a single plant and `?quantile=p10|p50|p90`
 (default `p50`; `p10` plans conservatively). The endpoint can be switched off in the integration
@@ -216,8 +217,10 @@ Five views, switched with the tabs at the top of the card:
   `layout: timeline` shows all days in one continuous chart instead.
 - **Today** – today alone in one larger chart, with the production so far, the expected total
   (so far plus the live forecast for the rest of the day), this morning's forecast, and the hit
-  rate and hours in range for the hours already finished. Below the hit rate: whether the forecast
-  was ▲ too pessimistic (more came) or ▼ too optimistic (less came); within ±3 % it is on target.
+  rate and hours in range for the hours already finished (shown from two finished producing hours
+  and 10 % of the day's energy on; before that "too early to judge"). Below the hit rate: whether
+  the forecast was ▲ too pessimistic (more came) or ▼ too optimistic (less came); within ±3 % it
+  is on target.
 - **Day by day** (`carousel`) – today, tomorrow and the day after one at a time, full width,
   switching automatically every `interval` seconds; the dots jump to a day.
 - **Plants** – the next days per plant as stacked areas (their top edge is the total) and today's

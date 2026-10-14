@@ -9,7 +9,7 @@ import numpy as np
 from .archive import EvalRow
 from .gbm import GradientBoosting
 from .model import quantile_score
-from .nowcast import DEFAULT_TAU, fit_day, fit_tau
+from .nowcast import DEFAULT_DAY_TAU, DEFAULT_DAY_WEIGHT, DEFAULT_TAU, fit_day, fit_tau
 from .variants import choose
 
 DAY = 86400
@@ -17,6 +17,11 @@ CORRECTION_MIN_DAYS = 30
 VALIDATION_DAYS = 14
 SHORT_HORIZONS = ("30m", "1h", "6h")
 CORRECTION_HORIZON = "1h"
+# Today's hit rate needs this many finished producing hours and this share of the day's energy;
+# one hazy morning hour would otherwise show "0 %" for a whole day.
+TODAY_MIN_HOURS = 2
+TODAY_MIN_SHARE = 0.1
+NOWCAST_MIN_DAYS = 14  # the live decay and the day factor are learned from two weeks or more
 
 
 @dataclass(frozen=True)
@@ -153,11 +158,15 @@ class Correction:
         return Correction(_fit(X, target, p50))
 
 
+def _days(rows: list[EvalRow]) -> int:
+    return len({r.forecast.issued_at // DAY for r in rows})
+
+
 def tau_from_rows(rows: list[EvalRow]) -> float:
     rows = [
         r for r in rows if r.forecast.horizon in SHORT_HORIZONS and r.forecast.ratio is not None
     ]
-    if not rows:
+    if _days(rows) < NOWCAST_MIN_DAYS:
         return DEFAULT_TAU
     f = [r.forecast for r in rows]
     lead = np.array([((x.start + x.end) / 2 - x.issued_at) / 60 for x in f])
@@ -178,6 +187,8 @@ def day_from_rows(rows: list[EvalRow], tau: float) -> tuple[float, float]:
         and r.forecast.day_ratio is not None
         and r.forecast.day_share is not None
     ]
+    if _days(rows) < NOWCAST_MIN_DAYS:
+        return DEFAULT_DAY_WEIGHT, DEFAULT_DAY_TAU
     f = [r.forecast for r in rows]
     return fit_day(
         np.array([x.raw_p50 for x in f]),
@@ -257,6 +268,7 @@ def today_so_far(
 
     The hit rate and the hours in range use the same rules as ``day_review``, limited to the
     hours whose production is complete (``until``); the hour still running is left out.
+    They stay empty (``too_early``) until enough of the day is done to judge it.
     """
     mask = (actual_times >= day_start) & (actual_times < day_end)
     today = {
@@ -266,6 +278,7 @@ def today_so_far(
         "deviation_pct": None,
         "in_band": None,
         "until": None,
+        "too_early": bool(morning_curve),  # without a morning forecast there is nothing to wait for
     }
     if morning_curve:
         curve = np.asarray(morning_curve, dtype=float)
@@ -280,7 +293,20 @@ def today_so_far(
     today["until"] = int(until)
     if morning_curve:
         scored = day_review(morning_curve, actual_times, actual_wh, day_start, until)
-        if scored["in_band"] is not None:  # at least one producing hour
+        curve = np.asarray(morning_curve, dtype=float)
+        in_day = (curve[:, 0] >= day_start) & (curve[:, 0] < day_end)
+        done = in_day & (curve[:, 0] < until)
+        actual_done = mask & (actual_times < until)
+        producing = {int(t - day_start) // 3600 for t in curve[done & (curve[:, 3] > 0), 0]}
+        producing |= {
+            int(t - day_start) // 3600 for t in actual_times[actual_done & (actual_wh > 0)]
+        }
+        energy = max(float(curve[done, 2].sum()), float(actual_wh[actual_done].sum()))
+        enough = len(producing) >= TODAY_MIN_HOURS and energy >= TODAY_MIN_SHARE * float(
+            curve[in_day, 2].sum()
+        )
+        today["too_early"] = not enough
+        if enough and scored["in_band"] is not None:  # at least one producing hour
             today.update(
                 hit_rate=scored["hit_rate"],
                 deviation_pct=scored["deviation_pct"],

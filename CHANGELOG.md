@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.2 – 2026-10-14
+
+- Fixed: after a weak first morning hour the whole day was forecast too low. The decay of the live
+  correction was learned from only a day or two of archived forecasts; when those came from a
+  version that was too low all day, the longest decay (6 hours) always won, and a hazy 9 o'clock
+  hour still lowered the 15 o'clock forecast by about 25 %. The decay and the weight of the day so
+  far are now learned only from two weeks of archived days on (until then the defaults from the
+  backtest apply: one hour and 0.6), and the decay is capped at three hours.
+- Fixed: the card's *Today* view showed a hit rate of 0 % and "166 % too optimistic" after the
+  first producing hour. The hit rate, its direction and the hours in range now wait for two
+  finished producing hours and 10 % of the day's energy (forecast or actual); until then they read
+  "too early to judge". New attribute `too_early` in `today`.
+- README links are absolute, so HACS shows the license badge.
+
 ## 0.9.1 – 2026-10-13
 
 - Fixed: when Open-Meteo answered with an error page instead of data (its rate limit or a server

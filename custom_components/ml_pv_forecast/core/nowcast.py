@@ -9,7 +9,9 @@ import numpy as np
 # Defaults from backtests on two plants over a year (2-3 h ahead about 0.2 points better than
 # the live ratio alone); each plant then learns its own values from the archive.
 DEFAULT_TAU = 60.0
-TAU_GRID = np.arange(30.0, 361.0, 15.0)
+# Capped at three hours: a forecast that was too low for days rewards an ever longer decay, which
+# then carries a weak morning hour into the whole afternoon.
+TAU_GRID = np.arange(30.0, 181.0, 15.0)
 MIN_ROWS = 50
 DEFAULT_DAY_WEIGHT = 0.6
 DEFAULT_DAY_TAU = 240.0

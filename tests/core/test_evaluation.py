@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -123,7 +125,7 @@ def test_correction_needs_thirty_days():
 
 def test_tau_from_rows_uses_short_rows_with_ratio():
     rows = [
-        row(500, 500, start=1800 * i, horizon="1h", issued=1800 * i, ratio=1.0) for i in range(60)
+        row(500, 500, start=DAY * i, horizon="1h", issued=DAY * i, ratio=1.0) for i in range(60)
     ]
     assert tau_from_rows(rows) == 30.0  # ratio 1 everywhere: every tau ties, first grid value wins
     assert tau_from_rows([row(500, 500, horizon="1h")]) == 60.0  # no ratio -> default
@@ -178,6 +180,37 @@ def test_today_so_far_scores_only_finished_hours():
     assert today["in_band"] == 100.0
     assert today["deviation_pct"] == pytest.approx(11.1, abs=0.1)
     assert today["until"] == day + 10 * 3600
+    assert today["too_early"] is False
+
+
+def test_today_so_far_waits_until_enough_of_the_day_is_done():
+    from custom_components.ml_pv_forecast.core.evaluation import today_so_far
+
+    # 2026-10-14: after the first producing hour (0.27 kWh against 0.7 kWh in the morning haze)
+    # the card showed a hit rate of 0 % and "166 % too optimistic" for a 20 kWh day.
+    day = 86400 * 100
+    quarters = day + np.arange(96) * 900
+    sun = (np.arange(96) >= 32) & (np.arange(96) < 72)  # 08:00–18:00, 100 Wh per quarter
+    curve = [[int(t), 80.0 * s, 100.0 * s, 120.0 * s] for t, s in zip(quarters, sun, strict=True)]
+
+    def at(hour, wh):
+        done = quarters < day + hour * 3600
+        return today_so_far(curve, quarters[done], np.where(sun, wh, 0.0)[done], day, day + 86400)
+
+    early = at(9, 40.0)  # one finished hour, 10 % of the day forecast
+    assert early["too_early"] is True
+    assert early["hit_rate"] is None and early["deviation_pct"] is None
+    assert early["in_band"] is None
+    assert early["actual_kwh"] == pytest.approx(0.16) and early["until"] == day + 9 * 3600
+    later = at(10, 80.0)  # two finished hours and 20 % of the day forecast
+    assert later["too_early"] is False and later["hit_rate"] == 75.0
+    # a forecast that was far too low: two hours that already brought much more than expected
+    surprise = [[t, lo / 20, p50 / 20, hi / 20] for t, lo, p50, hi in curve]
+    done = quarters < day + 10 * 3600
+    today = today_so_far(
+        surprise, quarters[done], np.where(sun, 100.0, 0.0)[done], day, day + 86400
+    )
+    assert today["too_early"] is False and today["hit_rate"] == pytest.approx(5.0)
 
 
 def test_today_so_far_before_sunrise_or_without_morning_forecast():
@@ -192,6 +225,7 @@ def test_today_so_far_before_sunrise_or_without_morning_forecast():
     nothing = today_so_far(None, np.array([]), np.array([]), day, day + 86400)
     assert nothing["actual_kwh"] == 0.0 and nothing["forecast_kwh"] is None
     assert nothing["hit_rate"] is None and nothing["until"] is None
+    assert nothing["too_early"] is False and today["too_early"] is True
 
 
 def test_tendency_weights_days_by_energy_and_skips_days_without_forecast():
@@ -208,8 +242,6 @@ def test_tendency_weights_days_by_energy_and_skips_days_without_forecast():
 
 
 def test_day_from_rows_learns_from_short_rows_with_the_day_so_far():
-    from dataclasses import replace
-
     from custom_components.ml_pv_forecast.core.nowcast import DEFAULT_DAY_TAU, DEFAULT_DAY_WEIGHT
 
     rng = np.random.default_rng(2)
@@ -218,10 +250,39 @@ def test_day_from_rows_learns_from_short_rows_with_the_day_so_far():
         day, share, lead_h = rng.uniform(0.5, 1.5), rng.uniform(0, 1), int(rng.integers(1, 6))
         g = np.exp(-lead_h)  # live decay 60 min, lead measured to the window's middle
         actual = 500 * (1 + 0.4 * share * (day - 1) * (1 - g) * np.exp(-lead_h * 60 / 120.0))
-        start = lead_h * 3600 - 1800
-        r = row(500, actual, start=start, horizon="1h", issued=0, ratio=1.0)
+        issued = int(rng.integers(0, 30)) * DAY
+        r = row(
+            500, actual, start=issued + lead_h * 3600 - 1800, horizon="1h", issued=issued, ratio=1.0
+        )
         rows.append(replace(r, forecast=replace(r.forecast, day_ratio=day, day_share=share)))
     assert day_from_rows(rows, 60.0) == (pytest.approx(0.4), 120.0)
     # rows without the day so far (archived before 0.7.0) keep the defaults
     plain = [row(500, 500, start=1800, horizon="1h", issued=0, ratio=1.0)] * 600
     assert day_from_rows(plain, 60.0) == (DEFAULT_DAY_WEIGHT, DEFAULT_DAY_TAU)
+    # many rows from only a few days are not enough to learn from
+    few = [r for r in rows if r.forecast.issued_at < 5 * DAY]
+    assert day_from_rows(few * 4, 60.0) == (DEFAULT_DAY_WEIGHT, DEFAULT_DAY_TAU)
+
+
+def test_tau_is_not_learned_from_a_few_days_of_a_biased_forecast():
+    # 2026-10-14: three days in which the old model was about 25 % too low everywhere. A long
+    # decay always wins then, and the learned 360 min dragged a weak first morning hour into
+    # the whole afternoon.
+    rng = np.random.default_rng(3)
+
+    def biased(days):
+        rows = []
+        for d in range(days):
+            for q in range(40):
+                issued = d * DAY + 7 * 3600 + q * 900
+                ratio = rng.uniform(1.1, 1.5)
+                for horizon, length in (("30m", 1800), ("1h", 3600), ("6h", 21600)):
+                    start = issued + 900
+                    r = row(400, 500, start=start, horizon="1h", issued=issued, ratio=ratio)
+                    rows.append(
+                        EvalRow(replace(r.forecast, horizon=horizon, end=start + length), 500, None)
+                    )
+        return rows
+
+    assert tau_from_rows(biased(3)) == 60.0  # 360 rows, but only three days: keep the default
+    assert tau_from_rows(biased(20)) <= 180.0  # learned, but never longer than three hours

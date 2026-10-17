@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The diagnostics file (*Settings → Devices &
+        services → Machine-Learning-Based PV Forecast → ⋮ → Download diagnostics*) is the most
+        helpful piece of information; the location is already redacted.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Integration version
+      placeholder: 0.9.3
+    validations:
+      required: true
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.10.1"
+    validations:
+      required: true
+  - type: textarea
+    id: plants
+    attributes:
+      label: Your plants
+      description: Number of plants, sensor type (power or energy), how long the history goes back, inverter.
+      placeholder: 2 plants, power sensors in W, history since 2023, SolarEdge hybrid inverter
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Attach the downloaded diagnostics file or paste its content.
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: Relevant lines of the Home Assistant log for `ml_pv_forecast`.
+      render: text

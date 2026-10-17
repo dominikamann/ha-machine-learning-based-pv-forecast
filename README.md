@@ -1,7 +1,12 @@
 # Machine-Learning-Based PV Forecast
 
-[![CI](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/ci.yml/badge.svg)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/blob/main/LICENSE)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=flat-square)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![GitHub release](https://img.shields.io/github/v/release/dominikamann/ha-machine-learning-based-pv-forecast?style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/releases)
+[![Tests](https://img.shields.io/github/actions/workflow/status/dominikamann/ha-machine-learning-based-pv-forecast/ci.yml?branch=main&label=tests&style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/ci.yml)
+[![hassfest](https://img.shields.io/github/actions/workflow/status/dominikamann/ha-machine-learning-based-pv-forecast/hassfest.yml?branch=main&label=hassfest&style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/hassfest.yml)
+[![HACS validation](https://img.shields.io/github/actions/workflow/status/dominikamann/ha-machine-learning-based-pv-forecast/hacs.yml?branch=main&label=HACS%20validation&style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/hacs.yml)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.3%2B-18BCF2?style=flat-square&logo=homeassistant&logoColor=white)](https://www.home-assistant.io)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/blob/main/LICENSE)
 
 **A PV forecast for Home Assistant that learns from your own history: no tilt, no azimuth, no kWp,
 no API key.**

@@ -4,3 +4,5 @@ docs/plans/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+.coverage
+TODO.md

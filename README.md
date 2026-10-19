@@ -7,6 +7,7 @@
 [![HACS validation](https://img.shields.io/github/actions/workflow/status/dominikamann/ha-machine-learning-based-pv-forecast/hacs.yml?branch=main&label=HACS%20validation&style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/hacs.yml)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.3%2B-18BCF2?style=flat-square&logo=homeassistant&logoColor=white)](https://www.home-assistant.io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/blob/main/LICENSE)
+[![Sponsor](https://img.shields.io/badge/support-me-ff5e5b?style=flat-square&logo=ko-fi)](https://github.com/sponsors/dominikamann)
 
 **A PV forecast for Home Assistant that learns from your own history: no tilt, no azimuth, no kWp,
 no API key.**

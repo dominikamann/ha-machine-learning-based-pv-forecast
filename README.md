@@ -1,6 +1,6 @@
 # Machine-Learning-Based PV Forecast
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=flat-square)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=flat-square)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/dominikamann/ha-machine-learning-based-pv-forecast?style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/releases)
 [![Tests](https://img.shields.io/github/actions/workflow/status/dominikamann/ha-machine-learning-based-pv-forecast/ci.yml?branch=main&label=tests&style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/ci.yml)
 [![hassfest](https://img.shields.io/github/actions/workflow/status/dominikamann/ha-machine-learning-based-pv-forecast/hassfest.yml?branch=main&label=hassfest&style=flat-square)](https://github.com/dominikamann/ha-machine-learning-based-pv-forecast/actions/workflows/hassfest.yml)
@@ -77,19 +77,26 @@ afterwards).
 
 ## Installation
 
-1. HACS → ⋮ → *Custom repositories* → add
-   `https://github.com/dominikamann/ha-machine-learning-based-pv-forecast`, category *Integration*.
-2. Install **Machine-Learning-Based PV Forecast** and restart Home Assistant.
-3. *Settings → Devices & services → Add integration →* **Machine-Learning-Based PV Forecast**.
-4. On the integration, choose **Add plant**: give it a name, choose how production is measured
+**HACS (recommended)**
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dominikamann&repository=ha-machine-learning-based-pv-forecast&category=integration)
+
+1. In HACS, search for **Machine-Learning-Based PV Forecast** (or use the button above), install it
+   and restart Home Assistant.
+2. *Settings → Devices & services → Add integration →* **Machine-Learning-Based PV Forecast**.
+3. On the integration, choose **Add plant**: give it a name, choose how production is measured
    (power in W/kW or an energy meter in Wh/kWh), then pick the matching sensors. A power sensor
    that goes clearly negative (typical for a hybrid inverter's AC output) asks for confirmation.
    Repeat for every plant.
-5. Add the **PV Forecast** card to a dashboard (see [Dashboard card](#dashboard-card)).
+4. Add the **PV Forecast** card to a dashboard (see [Dashboard card](#dashboard-card)).
 
 The location is taken from Home Assistant. The first model is trained as soon as Home Assistant
 has started; the first run downloads several years of weather and takes a few minutes (progress
 in the log). Weather is cached, later trainings only fetch the last days.
+
+If the integration does not show up in the HACS search, add it as a custom repository instead:
+HACS → ⋮ → *Custom repositories* → `https://github.com/dominikamann/ha-machine-learning-based-pv-forecast`,
+category *Integration*.
 
 ## Requirements
 

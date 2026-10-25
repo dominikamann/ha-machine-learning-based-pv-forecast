@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: in dashboards with the classic *Masonry* layout the card showed its figures and legend
+  but no charts. The card shared its styles with the dashboard, and the dashboard's own column
+  rule squeezed the charts to zero height. The card now keeps its content and styles to itself.
+
 ## 0.9.5 – 2026-10-25
 
 - Fixed: the tooltip of the card's *Plants* view showed only the plant under the mouse. It now

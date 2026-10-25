@@ -462,6 +462,7 @@ class MlPvForecastCard extends HTMLElement {
     this._body.className = "body";
     const style = document.createElement("style");
     style.textContent = `
+      :host { display: block; }
       .header { padding: 12px 16px 0; }
       .title { font-size: 1.15em; font-weight: 500; margin-bottom: 8px; }
       .tabs { display: flex; border: 1px solid var(--divider-color); border-radius: 8px; overflow: hidden; }
@@ -484,6 +485,7 @@ class MlPvForecastCard extends HTMLElement {
       .charts { display: flex; flex-direction: column; }
       .column { min-width: 0; overflow: hidden; border-top: 1px solid var(--divider-color); }
       .column:first-child { border-top: none; }
+      .column apexcharts-card { display: block; }
       .col-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 10px 12px 0; }
       .col-head .label { font-size: 0.9em; }
       .col-head .value { font-size: 1.05em; }
@@ -511,7 +513,9 @@ class MlPvForecastCard extends HTMLElement {
       .dots button.active { background: var(--primary-color); }
     `;
     this._card.append(style, this._header, this._body);
-    this.append(this._card);
+    // A shadow root of its own: in the light DOM the dashboard's styles reach the card and the
+    // card's reach the dashboard (the masonry view's own .column rule collapsed the charts to 0 px).
+    this.attachShadow({ mode: "open" }).append(this._card);
     // Charts measure their width when first drawn; dashboards often settle on a narrower column
     // afterwards (phones, masonry). Redraw whenever the card's width changes.
     this._width = 0;

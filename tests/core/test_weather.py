@@ -11,6 +11,7 @@ from custom_components.ml_pv_forecast.core.weather import (
     QUARTER,
     OpenMeteoClient,
     OpenMeteoError,
+    OpenMeteoLimit,
     WeatherData,
     cloud_total,
     parse_block,
@@ -292,3 +293,48 @@ async def test_impatient_forecast_gives_up_at_once(monkeypatch):
     with pytest.raises(OpenMeteoError, match="HTTP 503"):
         await OpenMeteoClient(session, 50.0, 10.0).forecast(patient=False)
     assert waits == [] and len(session.calls) == 1 and timeouts == [20]
+
+
+@pytest.mark.parametrize(
+    ("reason", "daily"),
+    [
+        ("Hourly API request limit exceeded. Please try again in the next hour.", False),
+        ("Daily API request limit exceeded. Please try again tomorrow.", True),
+    ],
+)
+async def test_hourly_or_daily_limit_is_reported_at_once(monkeypatch, reason, daily):
+    # Waiting a minute does not help against these: the caller must try again much later.
+    from custom_components.ml_pv_forecast.core import weather as weather_module
+
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
+    session = FakeSession(lambda url, params: (429, {"error": True, "reason": reason}))
+    with pytest.raises(OpenMeteoLimit) as err:
+        await OpenMeteoClient(session, 50.0, 10.0).forecast()
+    assert err.value.daily is daily and waits == [] and len(session.calls) == 1
+
+
+async def test_timeouts_are_retried(monkeypatch):
+    # Large history requests time out while Open-Meteo is busy; one timeout must not end training.
+    from custom_components.ml_pv_forecast.core import weather as weather_module
+
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(weather_module.asyncio, "sleep", fake_sleep)
+    answers = iter([TimeoutError()])
+
+    def handler(url, params):
+        answer = next(answers, (200, {"hourly": block([3600]), "minutely_15": block([900])}))
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    hourly, _ = await OpenMeteoClient(FakeSession(handler), 50.0, 10.0).forecast()
+    assert len(hourly) == 1 and waits == [61]

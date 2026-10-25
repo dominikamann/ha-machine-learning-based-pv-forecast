@@ -46,7 +46,7 @@ from .core.nowcast import (
 from .core.pipeline import PlantForecast, forecast_plant, total_forecast, train_plant, window_cloud
 from .core.solar import sun_position
 from .core.variants import STANDARD, VARIANTS, Variant
-from .core.weather import OpenMeteoClient, OpenMeteoError, WeatherData
+from .core.weather import OpenMeteoClient, OpenMeteoError, OpenMeteoLimit, WeatherData
 from .history import EntityProblem, async_production, entity_kind, quarter_sums
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +57,8 @@ WEATHER_MAX_AGE = timedelta(minutes=55)
 WEATHER_REPAIR_AFTER = timedelta(hours=3)
 ENTITY_REPAIR_AFTER = timedelta(minutes=30)
 TRAIN_RETRY_AFTER = timedelta(hours=1)
+# The first training downloads years of weather; Open-Meteo is often busy for hours (limits, 5xx).
+TRAIN_REPAIR_AFTER = timedelta(days=1)
 EVALUATION_DAYS = 30
 CORRECTION_DAYS = 365
 RETENTION = timedelta(days=730)
@@ -102,6 +104,7 @@ class PlantRuntime:
     variant_scores: dict[str, float] = field(default_factory=dict)  # from the last training
     problem_since: datetime | None = None
     retry_at: datetime | None = None
+    train_failing_since: datetime | None = None  # Open-Meteo failing the training since
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -144,6 +147,8 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
         self._unsubscribe: list = []
         # Training runs for minutes in an executor thread; unloading sets this to stop it.
         self._stop_training = threading.Event()
+        # One training at a time: the next plant then finds the weather history in the cache.
+        self._training = asyncio.Lock()
 
     # ---- lifecycle -------------------------------------------------------------------------
 
@@ -561,7 +566,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
 
     async def async_train(self, plant_id: str) -> None:
         plant = self.plants[plant_id]
-        async with plant.lock:
+        async with plant.lock, self._training:
             now = dt_util.utcnow()
             now_ts = int(now.timestamp())
             try:
@@ -602,6 +607,9 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             except EntityProblem as err:
                 self._entity_problem(plant, err)
                 return
+            except OpenMeteoError as err:
+                self._open_meteo_failed_training(plant, err, now)
+                return
             except Exception as err:  # noqa: BLE001 - any failure keeps the active model
                 _LOGGER.exception("Training plant %s failed", plant.name)
                 if plant.model is None:
@@ -618,6 +626,7 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             plant.model, plant.status, plant.rows = result.model, result.status, result.rows
             plant.variant_scores = result.variant_scores
             plant.error, plant.last_trained, plant.retry_at = None, now_ts, None
+            plant.train_failing_since = None
             _LOGGER.info(
                 "Training %s done in %.0f s: %s model, %d hours, %s",
                 plant.name,
@@ -628,6 +637,33 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             )
             self._clear_issue(f"training_{plant_id}")
         await self.async_request_refresh()
+
+    def _open_meteo_failed_training(
+        self, plant: PlantRuntime, err: OpenMeteoError, now: datetime
+    ) -> None:
+        # Open-Meteo errors are passing: try again later, a repair only when it lasts a day.
+        plant.train_failing_since = plant.train_failing_since or now
+        plant.error = f"training: {err}"
+        if isinstance(err, OpenMeteoLimit):
+            _LOGGER.warning("Training %s waits for Open-Meteo's limit: %s", plant.name, err)
+            # Retried by the forecast refresh once due: the limits reset on the full hour or day.
+            if err.daily:
+                start, step = (
+                    now.replace(hour=0, minute=0, second=0, microsecond=0),
+                    timedelta(days=1),
+                )
+            else:
+                start, step = now.replace(minute=0, second=0, microsecond=0), timedelta(hours=1)
+            plant.retry_at = start + step + timedelta(minutes=5)
+        else:
+            _LOGGER.warning("Training %s failed, retrying later: %s", plant.name, err)
+        if now - plant.train_failing_since < TRAIN_REPAIR_AFTER:
+            return
+        if plant.model is None:
+            plant.status = "error"
+        self._issue(
+            f"training_{plant.plant_id}", "training_failed", plant=plant.name, error=str(err)
+        )
 
     async def async_evaluate(self, now: datetime) -> None:
         if self.archive is None:

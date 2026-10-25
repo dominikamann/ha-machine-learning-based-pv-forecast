@@ -6,7 +6,8 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.ml_pv_forecast.const import DOMAIN
-from custom_components.ml_pv_forecast.core.weather import OpenMeteoError
+from custom_components.ml_pv_forecast.core.weather import OpenMeteoError, OpenMeteoLimit
+from custom_components.ml_pv_forecast.frontend import CARD_URL
 
 from .conftest import setup_plant
 
@@ -32,6 +33,16 @@ async def test_open_meteo_down_at_startup_retries(recorder_mock, hass, open_mete
     assert entry.state is ConfigEntryState.SETUP_RETRY
     # Home Assistant's start waits for this first forecast: it must not wait for Open-Meteo
     assert open_meteo.forecast.call_args.kwargs == {"patient": False}
+
+
+async def test_card_is_served_while_setup_is_retrying(recorder_mock, hass, hass_client, open_meteo):
+    # Without the card a dashboard shows "Configuration error" until Open-Meteo answers again.
+    open_meteo.forecast.side_effect = fail
+    entry = await setup_plant(hass, open_meteo)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    client = await hass_client()
+    resp = await client.get(CARD_URL)
+    assert resp.status == 200
 
 
 async def test_later_forecasts_wait_for_open_meteo(recorder_mock, hass, open_meteo):
@@ -180,6 +191,77 @@ async def test_unloading_stops_a_running_training(recorder_mock, hass, open_mete
     assert seen and not seen[0]()
     await hass.config_entries.async_unload(entry.entry_id)
     assert seen[0]()
+
+
+async def test_open_meteo_limit_in_training_waits_without_repair(recorder_mock, hass, open_meteo):
+    from homeassistant.util import dt as dt_util
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    plant.model, plant.status = None, "learning"  # as on a first start
+
+    async def limited(*args, **kwargs):
+        raise OpenMeteoLimit("Hourly API request limit exceeded", daily=False)
+
+    open_meteo.history_leads.side_effect = limited
+    await coordinator.async_train(plant.plant_id)
+    assert not ir.async_get(hass).async_get_issue(DOMAIN, f"training_{plant.plant_id}")
+    assert plant.status == "learning" and "limit" in plant.error
+    now = dt_util.utcnow()
+    next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    assert next_hour <= plant.retry_at <= next_hour + timedelta(minutes=10)
+
+
+async def test_open_meteo_failing_in_training_raises_repair_only_after_a_day(
+    recorder_mock, hass, open_meteo
+):
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    plant.model, plant.status = None, "learning"  # as on a first start
+    issue_id = f"training_{plant.plant_id}"
+
+    async def down(*args, **kwargs):
+        raise OpenMeteoError("HTTP 502")
+
+    open_meteo.history_leads.side_effect = down
+    await coordinator.async_train(plant.plant_id)
+    assert not ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert plant.status == "learning"
+    plant.train_failing_since -= timedelta(days=1, minutes=1)
+    await coordinator.async_train(plant.plant_id)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+    assert plant.status == "error"
+
+
+async def test_plants_train_one_after_another(recorder_mock, hass, open_meteo):
+    # Parallel trainings would each download the whole weather history: the second plant must
+    # find it in the cache, or several plants exceed Open-Meteo's hourly limit together.
+    import asyncio
+    from dataclasses import replace
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    plant = next(iter(coordinator.plants.values()))
+    other = replace(plant, plant_id="other", name="Other", lock=asyncio.Lock())
+    coordinator.plants["other"] = other
+    running, most = 0, 0
+
+    async def download(*args, **kwargs):
+        nonlocal running, most
+        running += 1
+        most = max(most, running)
+        await asyncio.sleep(0.05)
+        running -= 1
+        raise OpenMeteoError("stop here")
+
+    open_meteo.history_leads.side_effect = download
+    await asyncio.gather(
+        coordinator.async_train(plant.plant_id), coordinator.async_train(other.plant_id)
+    )
+    del coordinator.plants["other"]
+    assert open_meteo.history_leads.call_count >= 2 and most == 1
 
 
 async def test_retrain_service_rejects_unknown_plant(recorder_mock, hass, open_meteo):

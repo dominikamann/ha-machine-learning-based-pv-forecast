@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: dashboards showed *Configuration error* for the card while Open-Meteo was unreachable at
+  startup. The card was only added to the frontend once the first weather forecast had arrived;
+  it is now added as soon as the integration loads, whatever Open-Meteo does.
+- Fewer *Training failed* notices after setting up. The first training downloads years of weather
+  history, and several plants trained at the same time each downloaded all of it, which easily
+  used up Open-Meteo's free hourly limit; plants now train one after another, so the next one
+  takes the history from the cache. When the hourly or daily limit is hit anyway, training waits
+  until the limit resets instead of retrying for five minutes and failing. Timeouts are retried
+  like other Open-Meteo errors, and the repair notice only appears once training has failed
+  because of Open-Meteo for a day.
+
 ## 0.9.3 – 2026-10-14
 
 - Home Assistant no longer waits minutes for an overloaded Open-Meteo at startup. The first

@@ -39,6 +39,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
 
     hass.services.async_register(DOMAIN, "retrain", retrain, schema=RETRAIN_SCHEMA)
+    # Here, not in the entry setup: dashboards need the card even while that setup is retrying.
+    await async_register_card(hass)
     return True
 
 
@@ -54,7 +56,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MlPvConfigEntry) -> bool
     entry.runtime_data = coordinator
     coordinator.async_start()
     async_register_view(hass)
-    await async_register_card(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

@@ -88,7 +88,8 @@ afterwards).
    (power in W/kW or an energy meter in Wh/kWh), then pick the matching sensors. A power sensor
    that goes clearly negative (typical for a hybrid inverter's AC output) asks for confirmation.
    Repeat for every plant.
-4. Add the **PV Forecast** card to a dashboard (see [Dashboard card](#dashboard-card)).
+4. Reload the browser page (or the app) once, then add the **PV Forecast** card to a dashboard
+   (see [Dashboard card](#dashboard-card)).
 
 The location is taken from Home Assistant. The first model is trained as soon as Home Assistant
 has started; the first run downloads several years of weather and takes a few minutes (progress
@@ -341,16 +342,19 @@ data:
 
 ## Troubleshooting
 
-After updating, reload the dashboard once (browser: Ctrl/Cmd + Shift + R; app: ⋮ → *Reload*).
-A page that stayed open while Home Assistant restarted still runs the old card and may show
-*Configuration error*.
+After installing or updating, reload the dashboard once (browser: Ctrl/Cmd + Shift + R; app:
+⋮ → *Reload*). The card is loaded with the page: a page opened before the integration was set up
+(or that stayed open while Home Assistant restarted) does not have it, or still runs the old one,
+and shows *Configuration error* even though the card's configuration is fine.
 
 Problems appear under *Settings → Repairs*:
 
 - **Open-Meteo unreachable**: no new weather data for more than 3 hours. The last forecast is used
   while it lasts.
 - **Sensor problem**: a production sensor is missing or has the wrong unit. Only that plant stops.
-- **Training failed**: the previous model stays active.
+- **Training failed**: the previous model stays active. When Open-Meteo is busy or its free limit
+  is used up, training waits and tries again (on the next full hour or day for the limits); this
+  notice only appears when that has gone on for a day.
 
 *Download diagnostics* on the integration gives model status and forecast error figures (location
 redacted) for bug reports.

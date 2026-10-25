@@ -66,8 +66,17 @@ class OpenMeteoError(Exception):
     """Open-Meteo could not deliver data."""
 
 
+class OpenMeteoLimit(OpenMeteoError):
+    """Open-Meteo's hourly or daily limit was hit: retrying within minutes is pointless."""
+
+    def __init__(self, message: str, daily: bool) -> None:
+        super().__init__(message)
+        self.daily = daily
+
+
 class _Retry(Exception):
-    """Open-Meteo's limit was hit (HTTP 429) or its server failed (5xx); retried after a pause."""
+    """Open-Meteo's per-minute limit was hit, its server failed (5xx) or did not answer in time;
+    retried after a pause."""
 
 
 @dataclass(frozen=True)
@@ -248,10 +257,14 @@ class OpenMeteoClient:
                     payload.get("reason", "") if isinstance(payload, dict) else "no JSON in reply"
                 )
                 message = f"{url}: HTTP {resp.status} {reason}".strip()
+                if resp.status == 429 and reason.startswith(("Hourly", "Daily")):
+                    raise OpenMeteoLimit(message, daily=reason.startswith("Daily"))
                 if resp.status == 429 or resp.status >= 500:
                     raise _Retry(message)
                 raise OpenMeteoError(message)
-        except (aiohttp.ClientError, TimeoutError) as err:
+        except TimeoutError as err:
+            raise _Retry(f"{url}: no answer within {timeout} s") from err
+        except aiohttp.ClientError as err:
             raise OpenMeteoError(f"{url}: {err}") from err
 
     async def forecast(self, patient: bool = True) -> tuple[WeatherData, WeatherData]:

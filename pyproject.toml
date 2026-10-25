@@ -1,6 +1,6 @@
 [project]
 name = "ha-machine-learning-based-pv-forecast"
-version = "0.9.3"
+version = "0.9.4"
 requires-python = ">=3.13"
 
 [dependency-groups]

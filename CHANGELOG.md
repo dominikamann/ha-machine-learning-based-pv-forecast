@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.4 – 2026-10-25
 
 - Fixed: dashboards showed *Configuration error* for the card while Open-Meteo was unreachable at
   startup. The card was only added to the frontend once the first weather forecast had arrived;

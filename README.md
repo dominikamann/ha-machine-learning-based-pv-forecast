@@ -36,7 +36,7 @@ datasheet says it should do.
   replaces the old one when it is measurably better
 - **Four model variants, the best one per plant chosen automatically**: with or without extra
   weather inputs (humidity, dew point, rain, wind, visibility), with a long or a short memory
-- Forecast in the **Energy dashboard**
+- Forecast in the **Energy dashboard** ([how](#energy-dashboard))
 - Endpoint for **[evcc](https://evcc.io)**
 - Forecast error sensors per horizon, so you can watch the model improve
 
@@ -174,6 +174,21 @@ happens in the first weeks.
 Training four variants takes about three times as long as one. On a Raspberry Pi that is a few
 extra minutes once a week. To train only the standard variant, switch off *Test model variants*
 in the integration options.
+
+## Energy dashboard
+
+The forecast can be shown in Home Assistant's **Energy dashboard**, no card or extra sensor
+needed:
+
+1. *Settings → Dashboards → Energy* (or *Settings → Energy*), section *Solar panels*.
+2. Edit a solar production source (or add one), switch on *Solar production forecast* and tick
+   **Machine-Learning-Based PV Forecast**.
+
+The integration always hands the Energy dashboard the **total of all plants** (the same
+live-corrected hourly values as the *total* sensors and evcc), not one plant. Tick it on **one**
+solar source only: the Energy dashboard draws a forecast line per source, so ticking it on every
+plant's source shows the total several times. If you have one source per plant, pick any one of
+them; with a single source for the whole system, use that one.
 
 ## evcc
 

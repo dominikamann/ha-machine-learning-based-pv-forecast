@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.6 – 2026-10-25
 
 - Fixed: in dashboards with the classic *Masonry* layout the card showed its figures and legend
   but no charts. The card shared its styles with the dashboard, and the dashboard's own column

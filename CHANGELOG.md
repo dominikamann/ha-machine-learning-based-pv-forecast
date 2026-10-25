@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: the tooltip of the card's *Plants* view showed only the plant under the mouse. It now
+  lists every plant's own power for that hour, and today's actual power next to it up to now.
+
 ## 0.9.4 – 2026-10-25
 
 - Fixed: dashboards showed *Configuration error* for the card while Open-Meteo was unreachable at

@@ -156,7 +156,8 @@ const GEN = {
       });
     }
     return Object.entries(sums).map(([t, v]) => [Number(t), v]).sort((a, b) => a[0] - b[0]);`,
-  // Hourly actual power summed over `ids`, on the hours any of `allIds` has data (aligned series).
+  // Hourly actual power summed over `ids`, on the hours any of `allIds` has data. Hours with only a
+  // forecast are null: every series needs the same hours, or the tooltip shows just one of them.
   stackedActual: (ids, allIds) => `
     const add = (id, into) => (hass.states[id]?.attributes.actual || []).forEach(r => {
       const t = new Date(r.time); t.setMinutes(0, 0, 0);
@@ -164,13 +165,17 @@ const GEN = {
     });
     const all = {};
     for (const id of ${JSON.stringify(allIds)}) add(id, all);
+    const hours = new Set(Object.keys(all));
+    for (const id of ${JSON.stringify(allIds)}) {
+      (hass.states[id]?.attributes.hourly || []).forEach(r => hours.add(String(new Date(r.time).getTime())));
+    }
     const sums = {};
     for (const id of ${JSON.stringify(ids)}) {
       const own = {};
       add(id, own);
       for (const [t, v] of Object.entries(own)) sums[t] = (sums[t] || 0) + v.reduce((a, b) => a + b, 0) / v.length / 1000;
     }
-    return Object.keys(all).map(t => [Number(t), sums[t] || 0]).sort((a, b) => a[0] - b[0]);`,
+    return [...hours].map(t => [Number(t), t in all ? sums[t] || 0 : null]).sort((a, b) => a[0] - b[0]);`,
   review: (index, key) => `
     const day = (entity.attributes.review || [])[${index}];
     if (!day) return [];
@@ -1050,13 +1055,25 @@ MlPvForecastCard.prototype._plantsSpec = function (t) {
         .reverse(),
     ],
   });
-  // The tooltip shows each plant's own power: its sum minus the sum below it, which is the next
-  // series within the same group (forecast areas first, then actual bars, n series each).
+  // One tooltip row per plant with its own power: its sum minus the sum below it, which is the next
+  // series within the same group (forecast areas first, then actual lines, n series each, the
+  // last plant first). The actual power only where there is one, i.e. up to now.
   config.apex_config.tooltip = {
     x: { format: "ddd HH:mm" },
-    y: {
-      formatter: `EVAL:function(value, { seriesIndex, dataPointIndex, w }) { const n = ${plants.length}; const below = seriesIndex % n < n - 1 ? w.globals.series[seriesIndex + 1] : null; const own = value - (below ? below[dataPointIndex] || 0 : 0); return own.toFixed(2) + ' kW'; }`,
-    },
+    custom: `EVAL:function({ dataPointIndex: i, w }) {
+      const n = ${plants.length}, s = w.globals.series;
+      const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const own = (k) => s[k][i] === null || s[k][i] === undefined ? null : s[k][i] - ((k % n < n - 1 && s[k + 1][i]) || 0);
+      const kw = (v) => v.toLocaleString(${JSON.stringify(this._lang())}, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " kW";
+      const time = new Date(w.globals.seriesX[0][i]).toLocaleString(${JSON.stringify(this._lang())}, { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+      let rows = "";
+      for (let p = 0; p < n; p++) {
+        const f = n - 1 - p, forecast = own(f), actual = own(2 * n - 1 - p);
+        if (forecast === null && actual === null) continue;
+        rows += '<div class="apexcharts-tooltip-series-group apexcharts-active" style="display: flex"><span class="apexcharts-tooltip-marker" style="background-color: ' + w.globals.colors[f] + '"></span><div class="apexcharts-tooltip-text">' + esc(w.globals.seriesNames[f]) + ': <b>' + (forecast === null ? "–" : kw(forecast)) + '</b>' + (actual === null ? "" : ' · ' + ${JSON.stringify(escapeHtml(t.actual))} + ' ' + kw(actual)) + '</div></div>';
+      }
+      return '<div class="apexcharts-tooltip-title">' + time + '</div>' + rows;
+    }`,
   };
   const daylight = hourly(plants[0]).filter((r) => r.p50 > 0);
   config.apex_config.annotations = {

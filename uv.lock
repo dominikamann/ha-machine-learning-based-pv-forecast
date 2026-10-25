@@ -2215,7 +2215,7 @@ wheels = [
 
 [[package]]
 name = "ha-machine-learning-based-pv-forecast"
-version = "0.9.4"
+version = "0.9.5"
 source = { virtual = "." }
 
 [package.dev-dependencies]

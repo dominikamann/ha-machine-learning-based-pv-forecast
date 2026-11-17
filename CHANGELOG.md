@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.7 – 2026-11-17
+
+- Fixed: the *Forecast error* sensors reported the actual value above P90 in 30–45 % of the 30 min,
+  1 h and 6 h windows, although the band fits. Windows at night were scored as well, and an energy
+  meter that counts a few Wh there (forecast 0 Wh) counted as a miss above P90 every time. Windows
+  in which neither the forecast P90 nor the actual energy reach 0.5 % of the plant's power over the
+  window (at most six hours) are left out now; real production on a dull winter day stays far
+  above that. On a plant with five weeks of archive `above_p90_pct` went from 33–38 % to 6–13 %,
+  `below_p10_pct` stays at 10–13 %; the error in percent barely changes.
+- Fixed: the same meter noise lowered *in band* of the daily review (card, *Hit rate* sensors),
+  because every night hour with a few Wh counted as a producing hour outside the band, and it let
+  today's hit rate appear before two producing hours had passed. Both use the same rule now.
+- Fixed: Weather Plus variants were fed the forecast visibility for tomorrow and the day after,
+  although Open-Meteo archives no visibility for earlier model runs and the model never saw it for
+  those days in training. Visibility is now left out beyond the first day, as in training. The
+  forecast of plants on the Standard or Short term variant is unchanged.
+
 ## 0.9.6 – 2026-10-25
 
 - Fixed: in dashboards with the classic *Masonry* layout the card showed its figures and legend

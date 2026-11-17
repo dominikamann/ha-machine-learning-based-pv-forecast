@@ -220,7 +220,14 @@ class CurveSensor(ForecastEntity):
             self._plant_id, (np.array([]), np.array([]))
         )
 
-        today = today_so_far(morning, actual_times, actual_wh, w.today, w.tomorrow)
+        today = today_so_far(
+            morning,
+            actual_times,
+            actual_wh,
+            w.today,
+            w.tomorrow,
+            self.coordinator.capacity(self._plant_id),
+        )
 
         def kwh(start: int, end: int) -> float:
             return round(float(fc.energy(start, end)[1]) / 1000, 2)

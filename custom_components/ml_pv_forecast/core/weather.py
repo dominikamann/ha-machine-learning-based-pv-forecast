@@ -46,6 +46,9 @@ VARIABLES = {
     "wind_speed_10m": "wind_speed",
     "visibility": "visibility",  # not archived for previous runs or ERA5: NaN there
 }
+# Open-Meteo archives these for same-day forecasts but not for earlier model runs, so training
+# never sees them a day or more ahead; ``pipeline.with_lead`` hides them there when forecasting.
+NOT_IN_PREVIOUS_RUNS = ("visibility",)
 # Added in feature version 3; older caches and payloads lack them, so they default to NaN.
 OPTIONAL_VARIABLES = ("humidity", "dew_point", "precipitation", "wind_speed", "visibility")
 QUARTER_VARIABLES = ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation")

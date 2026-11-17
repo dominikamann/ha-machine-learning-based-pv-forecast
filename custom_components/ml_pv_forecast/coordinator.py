@@ -214,14 +214,17 @@ class MlPvCoordinator(DataUpdateCoordinator[dict[str, PlantForecast]]):
             end = int(dt_util.start_of_local_day(day + timedelta(days=1)).timestamp())
             days.append((day.isoformat(), start, end))
         for key in [*self.plants, TOTAL]:
-            self.review[key] = await self.hass.async_add_executor_job(self._review, key, days)
+            self.review[key] = await self.hass.async_add_executor_job(
+                self._review, key, days, self.capacity(key)
+            )
         self.async_update_listeners()
 
-    def _review(self, key: str, days: list[tuple[str, int, int]]) -> list[dict]:
+    def _review(self, key: str, days: list[tuple[str, int, int]], capacity: float) -> list[dict]:
         out = []
         for day, start, end in days:
             times, wh = self.archive.actuals(key, start, end)
-            out.append(day_review(self.archive.load_curve(key, day), times, wh, start, end))
+            curve = self.archive.load_curve(key, day)
+            out.append(day_review(curve, times, wh, start, end, capacity))
         return out
 
     async def _async_backfill_actuals(self) -> None:

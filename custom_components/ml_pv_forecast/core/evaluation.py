@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from .archive import EvalRow
 from .gbm import GradientBoosting
@@ -22,6 +23,13 @@ CORRECTION_HORIZON = "1h"
 TODAY_MIN_HOURS = 2
 TODAY_MIN_SHARE = 0.1
 NOWCAST_MIN_DAYS = 14  # the live decay and the day factor are learned from two weeks or more
+# Windows where neither P90 nor the actual energy reach this share of the plant's power over the
+# window are not scored: meters count a few Wh at night (up to 6 Wh a quarter on a 5.5 kW plant),
+# which would show up as misses above a P90 of zero in half of all short-horizon windows. Longer
+# windows are judged like six hours (3 % of an hour at full power), so a dull winter day still
+# counts.
+NOISE_SHARE = 0.005
+NOISE_MAX_HOURS = 6.0
 
 
 @dataclass(frozen=True)
@@ -38,8 +46,25 @@ class Metrics:
     score: float | None = None
 
 
+def producing(
+    p90: ArrayLike, actual: ArrayLike, capacity_wh: ArrayLike, hours: ArrayLike = 1.0
+) -> np.ndarray:
+    """Whether a window (scalars or arrays) produced or was forecast to produce, not just noise.
+
+    With an unknown capacity (0) any energy counts.
+    """
+    threshold = NOISE_SHARE * np.asarray(capacity_wh) * np.minimum(hours, NOISE_MAX_HOURS)
+    return (np.asarray(p90) > threshold) | (np.asarray(actual) > threshold)
+
+
 def compute_metrics(rows: list[EvalRow]) -> Metrics | None:
-    rows = [r for r in rows if r.actual > 0 or r.forecast.p50 > 0]
+    keep = producing(
+        [r.forecast.p90 for r in rows],
+        [r.actual for r in rows],
+        [r.forecast.capacity for r in rows],
+        np.array([r.forecast.end - r.forecast.start for r in rows], dtype=float) / 3600,
+    )
+    rows = [r for r, k in zip(rows, keep, strict=True) if k]
     if not rows:
         return None
     forecast = np.array([r.forecast.p50 for r in rows])
@@ -207,14 +232,28 @@ def day_review(
     actual_wh: np.ndarray,
     day_start: int,
     day_end: int,
+    capacity_wh: float = 0.0,
 ) -> dict:
     """How well the morning forecast matched one day.
 
     ``morning_curve`` holds quarter rows ``[start, p10, p50, p90]`` in Wh, actuals are quarter
     Wh. Hit rate: 100 % minus the deviation of the daily forecast from the actual energy.
     Deviation: the same with its sign, positive when the forecast was too optimistic.
-    In band: share of producing hours whose actual energy lay between P10 and P90.
+    In band: share of producing hours (``producing``) whose actual energy lay between P10 and
+    P90.
     """
+    return _score_day(morning_curve, actual_times, actual_wh, day_start, day_end, capacity_wh)[0]
+
+
+def _score_day(
+    morning_curve: list | None,
+    actual_times: np.ndarray,
+    actual_wh: np.ndarray,
+    day_start: int,
+    day_end: int,
+    capacity_wh: float,
+) -> tuple[dict, int]:
+    """``day_review`` and the number of producing hours it judged."""
     hours = np.arange(day_start, day_end, 3600)
     actual_h = np.zeros(len(hours))
     mask = (actual_times >= day_start) & (actual_times < day_end)
@@ -233,7 +272,7 @@ def day_review(
         ],
     }
     if not morning_curve:
-        return review
+        return review, 0
     curve = np.asarray(morning_curve, dtype=float)
     forecast_h = np.zeros((len(hours), 3))
     inside = (curve[:, 0] >= day_start) & (curve[:, 0] < day_end)
@@ -244,17 +283,17 @@ def day_review(
         hit = max(0.0, 1 - abs(forecast - actual) / actual) * 100
     else:
         hit = 100.0 if forecast <= 0 else 0.0
-    producing = (forecast_h[:, 2] > 0) | (actual_h > 0)
+    active = producing(forecast_h[:, 2], actual_h, capacity_wh)
     within = (actual_h >= forecast_h[:, 0]) & (actual_h <= forecast_h[:, 2])
     review.update(
         forecast_kwh=round(forecast / 1000, 2),
         hit_rate=round(hit, 1),
         deviation_pct=round((forecast - actual) / actual * 100, 1) if actual > 0 else None,
-        in_band=round(float(within[producing].mean()) * 100, 1) if producing.any() else None,
+        in_band=round(float(within[active].mean()) * 100, 1) if active.any() else None,
     )
     for row, f in zip(review["hourly"], forecast_h, strict=True):
         row.update(p10=round(float(f[0]), 1), p50=round(float(f[1]), 1), p90=round(float(f[2]), 1))
-    return review
+    return review, int(active.sum())
 
 
 def today_so_far(
@@ -263,6 +302,7 @@ def today_so_far(
     actual_wh: np.ndarray,
     day_start: int,
     day_end: int,
+    capacity_wh: float = 0.0,
 ) -> dict:
     """Today's production so far and how well the morning forecast matched the finished hours.
 
@@ -292,17 +332,15 @@ def today_so_far(
         return today
     today["until"] = int(until)
     if morning_curve:
-        scored = day_review(morning_curve, actual_times, actual_wh, day_start, until)
+        scored, hours = _score_day(
+            morning_curve, actual_times, actual_wh, day_start, until, capacity_wh
+        )
         curve = np.asarray(morning_curve, dtype=float)
         in_day = (curve[:, 0] >= day_start) & (curve[:, 0] < day_end)
         done = in_day & (curve[:, 0] < until)
         actual_done = mask & (actual_times < until)
-        producing = {int(t - day_start) // 3600 for t in curve[done & (curve[:, 3] > 0), 0]}
-        producing |= {
-            int(t - day_start) // 3600 for t in actual_times[actual_done & (actual_wh > 0)]
-        }
         energy = max(float(curve[done, 2].sum()), float(actual_wh[actual_done].sum()))
-        enough = len(producing) >= TODAY_MIN_HOURS and energy >= TODAY_MIN_SHARE * float(
+        enough = hours >= TODAY_MIN_HOURS and energy >= TODAY_MIN_SHARE * float(
             curve[in_day, 2].sum()
         )
         today["too_early"] = not enough

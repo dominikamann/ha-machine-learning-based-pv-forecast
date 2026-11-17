@@ -103,6 +103,21 @@ def test_with_lead_assigns_days_ahead():
     assert leads[10 + 30] == 1 and leads[10 + 60] == 2 and leads[10 + 100] == 2
 
 
+def test_with_lead_hides_visibility_beyond_the_first_day():
+    from dataclasses import replace
+
+    from custom_components.ml_pv_forecast.core.pipeline import with_lead
+
+    # Open-Meteo archives no visibility for runs a day or two back, so training sees it only
+    # for same-day rows; the forecast must not feed it in where the model never had it.
+    w = synthetic_weather(START_2024, 120)
+    w = replace(w, visibility=np.full(120, 20000.0))
+    now = int(w.times[10])
+    out = with_lead(w, now)
+    assert np.all(out.visibility[out.lead_days == 0] == 20000.0)
+    assert np.all(np.isnan(out.visibility[out.lead_days >= 1]))
+
+
 def test_training_stacks_leads_and_skips_rows_without_weather():
     from dataclasses import replace
 

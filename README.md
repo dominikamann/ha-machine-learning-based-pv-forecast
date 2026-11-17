@@ -144,7 +144,9 @@ Forecast error sensors stay *unknown* (attribute `status: collecting`) until the
 02:30 has archived forecasts to compare: the short horizons after the first night, the day horizons
 after one to two days. The forecast error is the mean absolute error over the last 30 days as a percentage of actual production
 (lower is better). `skill` compares with simply repeating the previous period (above 0 is better
-than that). `below_p10_pct` and `above_p90_pct` check the P10–P90 band: about 10 % each is right;
+than that). Windows in which neither P90 nor the actual energy reach 0.5 % of the plant's power over
+the window (at most six hours; night, meter noise) are left out. `below_p10_pct` and `above_p90_pct` check the P10–P90
+band: about 10 % each is right;
 more means the band is too narrow, clearly less that it is wider than it needs to be. `score_pct`
 rates P50 and the band together (the quantile score also used to pick the model variant). Installations from before 0.6.1 keep their entity IDs (`…_accuracy_…`); only the
 names changed, so dashboards and automations keep working.

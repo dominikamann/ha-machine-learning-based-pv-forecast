@@ -62,6 +62,20 @@ def test_metrics_check_the_band():
     assert m.score == pytest.approx((29 + 4 + 4 + 29) / 4 * 2 / 3)
 
 
+def test_metrics_ignore_meter_noise_outside_production():
+    # A meter that counts a few Wh at night (capacity 1000 W, forecast 0) is not a
+    # window above P90: half the short-horizon windows of a real plant looked like that.
+    rows = [row(100, 100, horizon="1h"), *(row(0, wh, horizon="1h") for wh in (1, 3, 5))]
+    m = compute_metrics(rows)
+    assert m.count == 1
+    assert m.above_p90 == 0.0
+    # a window the plant really produced in still counts, whatever was forecast
+    assert compute_metrics([row(0, 8, horizon="1h")]).above_p90 == 100.0
+    # so does a dull day with little energy (threshold 5 Wh at 1000 W)
+    assert compute_metrics([row(0, 50)]).above_p90 == 100.0
+    assert compute_metrics([row(0, 4)]) is None
+
+
 def test_metrics_none_when_empty():
     assert compute_metrics([row(0, 0)]) is None
 
@@ -152,6 +166,20 @@ def test_day_review_hit_rate_band_and_hourly():
     assert ten["p50"] == pytest.approx(400.0) and ten["w"] == 360.0
 
 
+def test_day_review_ignores_meter_noise_at_night():
+    from custom_components.ml_pv_forecast.core.evaluation import day_review
+
+    day = 86400 * 100
+    quarters = day + np.arange(96) * 900
+    sun = (np.arange(96) >= 32) & (np.arange(96) < 64)  # 08:00–16:00
+    curve = [[int(t), 80.0 * s, 100.0 * s, 120.0 * s] for t, s in zip(quarters, sun, strict=True)]
+    actual = np.where(sun, 90.0, 1.0)  # the meter counts 1 Wh per quarter at night
+    review = day_review(curve, quarters, actual, day, day + 86400, capacity_wh=1000.0)
+    assert review["in_band"] == 100.0
+    # without a capacity every hour with any energy counts, as before: 8 of 24 hours in band
+    assert day_review(curve, quarters, actual, day, day + 86400)["in_band"] == pytest.approx(33.3)
+
+
 def test_day_review_without_morning_forecast_or_with_gaps():
     from custom_components.ml_pv_forecast.core.evaluation import day_review
 
@@ -211,6 +239,20 @@ def test_today_so_far_waits_until_enough_of_the_day_is_done():
         surprise, quarters[done], np.where(sun, 100.0, 0.0)[done], day, day + 86400
     )
     assert today["too_early"] is False and today["hit_rate"] == pytest.approx(5.0)
+
+
+def test_today_so_far_does_not_count_meter_noise_as_producing_hours():
+    from custom_components.ml_pv_forecast.core.evaluation import today_so_far
+
+    day = 86400 * 100
+    quarters = day + np.arange(96) * 900
+    sun = (np.arange(96) >= 32) & (np.arange(96) < 72)  # 08:00–18:00
+    curve = [[int(t), 80.0 * s, 100.0 * s, 120.0 * s] for t, s in zip(quarters, sun, strict=True)]
+    # Up to 09:00: 1 Wh of noise in each night quarter and one producing hour (400 Wh, 10 %).
+    done = quarters < day + 9 * 3600
+    actual = np.where(sun, 100.0, 1.0)[done]
+    today = today_so_far(curve, quarters[done], actual, day, day + 86400, capacity_wh=1000.0)
+    assert today["too_early"] is True and today["hit_rate"] is None
 
 
 def test_today_so_far_before_sunrise_or_without_morning_forecast():

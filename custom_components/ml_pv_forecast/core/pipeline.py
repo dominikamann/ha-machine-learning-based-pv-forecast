@@ -15,7 +15,7 @@ from .features import build_features
 from .model import PlantModel, TrainResult, train
 from .nowcast import DEFAULT_TAU, DayFactor, adjust
 from .variants import Variant
-from .weather import WeatherData, cloud_total
+from .weather import NOT_IN_PREVIOUS_RUNS, WeatherData, cloud_total
 
 HOUR = 3600
 QUARTER = 900
@@ -156,9 +156,16 @@ def train_plant(
 
 
 def with_lead(weather: WeatherData, now: int) -> WeatherData:
-    """Lead in days as used in training: 0 up to 24 h ahead, 1 up to 48 h, then 2."""
+    """Lead in days as used in training: 0 up to 24 h ahead, 1 up to 48 h, then 2.
+
+    Variables that Open-Meteo does not archive for earlier model runs are hidden beyond the first
+    day, as the model only ever saw them with same-day rows (Weather Plus variants).
+    """
     lead = np.clip(np.floor((weather.times - now) / DAY), 0, 2)
-    return replace(weather, lead_days=lead.astype(float))
+    hidden = {
+        name: np.where(lead >= 1, np.nan, getattr(weather, name)) for name in NOT_IN_PREVIOUS_RUNS
+    }
+    return replace(weather, lead_days=lead.astype(float), **hidden)
 
 
 def forecast_plant(

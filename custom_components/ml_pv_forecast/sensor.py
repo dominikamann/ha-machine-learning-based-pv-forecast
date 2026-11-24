@@ -263,7 +263,7 @@ class CurveSensor(ForecastEntity):
                 {**row, **self.coordinator.hour_weather(row["time"])}
                 for row in rows(fc.hour_times, fc.hourly, w.today, w.day_after_end, 1.0)
             ],
-            "quarters": rows(fc.quarter_times, fc.quarter, w.today, w.now + 86400, 4.0),
+            "quarters": rows(fc.quarter_times, fc.quarter, w.today, w.day_after_end, 4.0),
             # today's past hours as the live forecast saw them just before (W)
             "past": [
                 {"time": _iso(t), "p10": round(a, 1), "p50": round(b, 1), "p90": round(c, 1)}

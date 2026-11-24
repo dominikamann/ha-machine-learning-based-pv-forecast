@@ -125,25 +125,27 @@ const hourlyAverage = (source, field) => `
 const GEN = {
   // The live forecast: for past hours what it said just before each hour began (archived), from
   // the current hour on the hourly averages of the 15-minute values (corrected by the current
-  // production) while they last, the hourly values after that.
+  // production), and the hourly value for any hour without all four quarters.
+  // Hours are whole UTC hours like the forecast's, also in time zones with a half-hour offset.
   live: (key) => `
-    const hour = new Date(); hour.setMinutes(0, 0, 0);
+    const H = 3600000;
+    const hour = Math.floor(Date.now() / H) * H;
     const past = (entity.attributes.past || [])
       .map(r => [new Date(r.time).getTime(), r.${key} / 1000])
-      .filter(([t]) => t < hour.getTime());
+      .filter(([t]) => t < hour);
     const sums = {};
     (entity.attributes.quarters || []).forEach(r => {
-      const t = new Date(r.time); t.setMinutes(0, 0, 0);
-      if (t >= hour) (sums[t.getTime()] ??= []).push(r.${key});
+      const t = Math.floor(new Date(r.time).getTime() / H) * H;
+      if (t >= hour) (sums[t] ??= []).push(r.${key});
     });
-    const quarters = Object.entries(sums)
+    const quarters = new Map(Object.entries(sums)
       .filter(([, v]) => v.length === 4)
-      .map(([t, v]) => [Number(t), v.reduce((a, b) => a + b, 0) / 4000]);
-    const last = quarters.length ? quarters[quarters.length - 1][0] : hour.getTime() - 1;
+      .map(([t, v]) => [Number(t), v.reduce((a, b) => a + b, 0) / 4000]));
     const hours = (entity.attributes.hourly || [])
       .map(r => [new Date(r.time).getTime(), r.${key} / 1000])
-      .filter(([t]) => t > last);
-    return [...past, ...quarters, ...hours];`,
+      .filter(([t]) => t >= hour && !quarters.has(t));
+    const future = [...quarters, ...hours].sort((a, b) => a[0] - b[0]);
+    return [...past, ...future];`,
   morning: hourlyAverage("entity.attributes.morning", "p50"),
   actual: hourlyAverage("entity.attributes.actual", "w"),
   // Sum of the hourly P50 of several plants (apexcharts-card passes `hass` to generators).

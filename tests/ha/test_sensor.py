@@ -70,6 +70,13 @@ async def test_curve_has_actual_today_daily_totals_and_hourly_from_midnight(
     assert set(attrs["daily"]) == {"today", "tomorrow", "day_after_tomorrow"}
     first = dt_util.parse_datetime(attrs["hourly"][0]["time"])
     assert first.timestamp() <= midnight + 3600
+    # the 15-minute values cover every hour the hourly values cover (issue #1)
+    quarters = {dt_util.parse_datetime(q["time"]) for q in attrs["quarters"]}
+    end = max(quarters) + timedelta(minutes=15)
+    hours = [dt_util.parse_datetime(h["time"]) for h in attrs["hourly"]]
+    assert end > hours[-1]  # reaches into the last hour, not cut off after 24 h as before
+    for hour in (h for h in hours if h >= min(quarters) and h + timedelta(hours=1) <= end):
+        assert {hour + timedelta(minutes=m) for m in (0, 15, 30, 45)} <= quarters
 
 
 async def test_card_script_is_served(recorder_mock, hass, hass_client, open_meteo):

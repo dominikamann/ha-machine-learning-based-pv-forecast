@@ -132,7 +132,7 @@ Per plant and for the total:
 | Next 30 minutes, next hour, next 6 hours | kWh | `p10`, `p90` |
 | Today, today remaining, tomorrow, day after tomorrow | kWh | `p10`, `p90` |
 | Peak power today, peak power tomorrow | W | `time` |
-| Forecast curve (state: today in kWh) | kWh | `hourly` (72 h, Wh per hour), `quarters` (W), `morning` (this morning's forecast for today, W) |
+| Forecast curve (state: today in kWh) | kWh | `hourly` (72 h, Wh per hour), `quarters` (15-minute values in W, live-corrected, from midnight today to the end of the day after tomorrow like `hourly`), `morning` (this morning's forecast for today, W) |
 | Forecast error 30 minutes / 1 hour / 6 hours / today (morning forecast) / day ahead | % | `mae_kwh`, `bias_kwh`, `skill`, `count`, `below_p10_pct`, `above_p90_pct`, `score_pct` |
 | Model status | learning / ready / error | `model`, `last_trained`, `rows`, `error` |
 | Model variant | standard / weather_plus / short_memory / weather_plus_short_memory / fallback | `scores` (quantile score of each variant at the last training, % of the actual energy), `since`, `testing` |

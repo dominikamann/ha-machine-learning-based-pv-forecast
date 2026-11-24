@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.8 – 2026-11-24
+
+- The `quarters` attribute of the *Forecast curve* sensors now covers the same 72 hours as
+  `hourly` – from midnight today to the end of the day after tomorrow – instead of ending 24 hours
+  from now (#1). The 15-minute values were already computed for these days; they were only cut
+  off. The card's live curve therefore uses the 15-minute values for all three days. Toward the
+  end of the 72 hours they carry less detail: Open-Meteo takes 15-minute radiation from regional
+  models where they reach and interpolates hourly values beyond. The card's shared kW scale may
+  now follow a 15-minute peak on tomorrow or the day after, and an hour that misses one of its
+  quarters is drawn from the hourly value instead of being left out.
+
 ## 0.9.7 – 2026-11-17
 
 - Fixed: the *Forecast error* sensors reported the actual value above P90 in 30–45 % of the 30 min,

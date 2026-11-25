@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.9 – 2026-11-25
+
+- Fixed: between midnight and the moment this morning's forecast is recorded, the *Forecast curve*
+  sensors still carried yesterday's morning forecast. The card's *Today* view therefore showed
+  *Morning forecast 0 kWh*. The `morning` attribute now only holds rows of the current day, and
+  `today.forecast_kwh` stays empty (shown as –) until the new morning forecast exists.
+
 ## 0.9.8 – 2026-11-24
 
 - The `quarters` attribute of the *Forecast curve* sensors now covers the same 72 hours as

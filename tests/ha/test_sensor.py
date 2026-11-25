@@ -258,6 +258,23 @@ async def test_today_attribute_scores_the_finished_hours(recorder_mock, hass, op
     assert today["until"] == dt_util.utc_from_timestamp(start + 10 * 3600).isoformat()
 
 
+async def test_yesterdays_morning_forecast_is_not_shown_for_today(recorder_mock, hass, open_meteo):
+    from homeassistant.util import dt as dt_util
+
+    entry = await setup_plant(hass, open_meteo)
+    coordinator = entry.runtime_data
+    yesterday = int(dt_util.start_of_local_day().timestamp()) - 86400
+    coordinator.morning["total"] = [
+        [int(t), 80.0, 100.0, 120.0] for t in yesterday + np.arange(96) * 900
+    ]
+    coordinator.async_update_listeners()
+    await hass.async_block_till_done()
+    attributes = hass.states.get(_entity(hass, entry, "total_curve")).attributes
+    assert attributes["morning"] == []
+    assert attributes["today"]["forecast_kwh"] is None
+    assert attributes["today"]["too_early"] is False
+
+
 @pytest.mark.slow
 async def test_states_and_attributes_contain_no_numpy_types(recorder_mock, hass, open_meteo):
     entry = await setup_plant(hass, open_meteo)

@@ -215,7 +215,12 @@ class CurveSensor(ForecastEntity):
                 if start <= t < end
             ]
 
-        morning = self.coordinator.morning.get(self._plant_id, [])
+        # until this morning's forecast is frozen, the coordinator still holds yesterday's
+        morning = [
+            row
+            for row in self.coordinator.morning.get(self._plant_id, [])
+            if w.today <= row[0] < w.tomorrow
+        ]
         actual_times, actual_wh = self.coordinator.actual_today.get(
             self._plant_id, (np.array([]), np.array([]))
         )
